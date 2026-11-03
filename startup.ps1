@@ -88,7 +88,8 @@ if ($databaseState -eq 'empty') {
     throw "Unexpected database inspection result; restore was not attempted"
 }
 
-# Always fetch the current API image before starting or recreating the container.
-Run-Docker up -d --wait --pull always api
+# Always fetch the current API and admin images before starting or recreating their containers.
+Run-Docker up -d --wait --pull always api admin-api admin-web
 
 Invoke-RestMethod http://localhost:5081/health/ready
+Invoke-RestMethod http://localhost:5082/health/ready
