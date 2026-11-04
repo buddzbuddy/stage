@@ -1,0 +1,57 @@
+x-admin-environment: &admin-environment
+  ASPNETCORE_ENVIRONMENT: Development
+  PORT: "8080"
+  ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:?Set POSTGRES_DB};Username=${POSTGRES_USER:?Set POSTGRES_USER};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+  Storage__OrderAttachments__Endpoint: minio:9000
+  Storage__OrderAttachments__AccessKey: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+  Storage__OrderAttachments__SecretKey: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
+  Storage__OrderAttachments__BucketName: ${MINIO_BUCKET:-kyzmet-order-attachments}
+  Storage__OrderAttachments__Secure: "false"
+  DataProtection__KeysPath: /var/usta/dataprotection
+  PhoneCodes__HashKey: ${PHONE_CODES_HASH_KEY:?Set PHONE_CODES_HASH_KEY}
+
+services:
+  admin-api:
+    image: ${USTA_ADMIN_API_IMAGE:?Set USTA_ADMIN_API_IMAGE to your Docker Hub repository and version tag}
+    pull_policy: always
+    environment:
+      <<: *admin-environment
+    ports:
+      - "127.0.0.1:${ADMIN_API_PORT:-5082}:8080"
+    volumes:
+      - admin_api_dataprotection:/var/usta/dataprotection
+    depends_on:
+      # Only the main API migrates the database.
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 6s
+      start_period: 60s
+      retries: 12
+    networks:
+      - topoz-proxy
+
+  admin-web:
+    image: ${USTA_ADMIN_WEB_IMAGE:?Set USTA_ADMIN_WEB_IMAGE to your Docker Hub repository and version tag}
+    pull_policy: always
+    environment:
+      ADMIN_API_URL: http://admin-api:8080
+    ports:
+      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:${ADMIN_WEB_PORT:-5083}:80"
+    depends_on:
+      admin-api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - topoz-proxy
+
+volumes:
+  admin_api_dataprotection:

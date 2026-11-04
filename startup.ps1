@@ -1,11 +1,20 @@
+[CmdletBinding()]
+param(
+    [switch]$WithAdmin
+)
+
 
 $ErrorActionPreference = "Stop"
 
 $compose = @(
     "compose",
-    "--env-file", ".env.stage",
-    "-f", "docker-compose-stage.yml"
+    "--env-file", (Join-Path $PSScriptRoot ".env.stage"),
+    "-f", (Join-Path $PSScriptRoot "docker-compose-stage.yml")
 )
+
+if ($WithAdmin) {
+    $compose += @("-f", (Join-Path $PSScriptRoot "docker-compose-stage-admin.yml"))
+}
 
 function Run-Docker {
     & docker @compose @args
@@ -57,7 +66,7 @@ if ($LASTEXITCODE -ne 0) {
 $databaseState = ($databaseState | Out-String).Trim()
 
 if ($databaseState -eq 'empty') {
-    Run-Docker cp stage-backup/usta.dump db:/tmp/usta.dump
+    Run-Docker cp (Join-Path $PSScriptRoot "stage-backup/usta.dump") db:/tmp/usta.dump
 
     # Restore with retry only for connection/startup errors
     $restored = $false
@@ -90,8 +99,10 @@ else {
     throw "Unexpected database inspection result; restore was not attempted"
 }
 
-# Always fetch the current API and admin images before starting or recreating their containers.
-Run-Docker up -d --wait --pull always api admin-api admin-web
-
-Invoke-RestMethod http://localhost:5081/health/ready  # api
-Invoke-RestMethod http://localhost:5082/health/ready  # admin-api
+# The earlier pull covers all services selected by the compose files.
+# Compose healthchecks use container ports, independent of host port overrides.
+$services = @("api", "topoz-frontend", "caddy")
+if ($WithAdmin) {
+    $services += @("admin-api", "admin-web")
+}
+Run-Docker up -d --wait @services

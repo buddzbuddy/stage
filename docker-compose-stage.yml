@@ -1,6 +1,6 @@
 name: usta-stage
 
-# Both hosts work over one database and one bucket.
+# Shared API settings; keep the optional admin compose environment in sync.
 x-host-environment: &host-environment
   ASPNETCORE_ENVIRONMENT: Development
   PORT: "8080"
@@ -31,7 +31,7 @@ services:
       AI__OpenAI__ApiKey: ${OPENAI_API_KEY:-}
       EmbeddingService__BaseUrl: ${EMBEDDING_SERVICE_URL:-http://host.docker.internal:8092}
       EmbeddingService__CatalogSyncOnStartup: "false"
-      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-https://topoz.kg}
     ports:
       - "${STAGE_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8081}:8080"
     volumes:
@@ -48,48 +48,6 @@ services:
       timeout: 6s
       start_period: 120s
       retries: 12
-    networks:
-      - topoz-proxy
-
-  admin-api:
-    image: ${USTA_ADMIN_API_IMAGE:?Set USTA_ADMIN_API_IMAGE to your Docker Hub repository and version tag}
-    pull_policy: always
-    environment:
-      <<: *host-environment
-    ports:
-      - "127.0.0.1:${ADMIN_API_PORT:-5082}:8080"
-    volumes:
-      - admin_api_dataprotection:/var/usta/dataprotection
-    depends_on:
-      # Only the main API migrates the database.
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health/ready"]
-      interval: 10s
-      timeout: 6s
-      start_period: 60s
-      retries: 12
-    networks:
-      - topoz-proxy
-
-  admin-web:
-    image: ${USTA_ADMIN_WEB_IMAGE:?Set USTA_ADMIN_WEB_IMAGE to your Docker Hub repository and version tag}
-    pull_policy: always
-    environment:
-      ADMIN_API_URL: http://admin-api:8080
-    ports:
-      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:${ADMIN_WEB_PORT:-5083}:80"
-    depends_on:
-      admin-api:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
     networks:
       - topoz-proxy
 
@@ -135,11 +93,19 @@ services:
     image: ${TOPOS_FRONTEND_IMAGE:?Set TOPOS_FRONTEND_IMAGE to your Docker Hub repository and version tag}
     pull_policy: always
     environment:
-      API_URL: http://api:8080
+      API_PROXY_TARGET: http://api:8080
     ports:
       - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 6
     networks:
       - topoz-proxy
+
   caddy:
     image: caddy:2
     container_name: topoz-caddy
@@ -148,6 +114,8 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
+      api:
+        condition: service_healthy
       topoz-frontend:
         condition: service_healthy
     volumes:
@@ -159,10 +127,9 @@ services:
 
 networks:
   topoz-proxy:
-    external: true
+    driver: bridge
 volumes:
   api_dataprotection:
-  admin_api_dataprotection:
   postgres_data:
   minio_data:
   caddy_data:
