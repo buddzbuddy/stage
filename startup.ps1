@@ -82,14 +82,16 @@ if ($databaseState -eq 'empty') {
     if (-not $restored) {
         throw "Database restore failed after retries"
     }
-} elseif ($databaseState -eq 'populated') {
+}
+elseif ($databaseState -eq 'populated') {
     Write-Host "Existing database detected; skipping backup restore."
-} else {
+}
+else {
     throw "Unexpected database inspection result; restore was not attempted"
 }
 
 # Always fetch the current API and admin images before starting or recreating their containers.
 Run-Docker up -d --wait --pull always api admin-api admin-web
 
-Invoke-RestMethod http://localhost:5081/health/ready
-Invoke-RestMethod http://localhost:5082/health/ready
+Invoke-RestMethod http://localhost:5081/health/ready  # api
+Invoke-RestMethod http://localhost:5082/health/ready  # admin-api
