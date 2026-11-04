@@ -58,7 +58,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -108,7 +108,7 @@ services:
 
   caddy:
     image: caddy:2
-    container_name: topoz-caddy
+    container_name: topoz-caddy-stage
     restart: unless-stopped
     ports:
       - "80:80"
