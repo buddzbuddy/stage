@@ -48,6 +48,8 @@ services:
       timeout: 6s
       start_period: 120s
       retries: 12
+    networks:
+      - topoz-proxy
 
   admin-api:
     image: ${USTA_ADMIN_API_IMAGE:?Set USTA_ADMIN_API_IMAGE to your Docker Hub repository and version tag}
@@ -69,6 +71,8 @@ services:
       timeout: 6s
       start_period: 60s
       retries: 12
+    networks:
+      - topoz-proxy
 
   admin-web:
     image: ${USTA_ADMIN_WEB_IMAGE:?Set USTA_ADMIN_WEB_IMAGE to your Docker Hub repository and version tag}
@@ -86,6 +90,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 6
+    networks:
+      - topoz-proxy
 
   db:
     image: ${POSTGRES_IMAGE:-postgres:17-alpine}
@@ -103,6 +109,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - topoz-proxy
 
   minio:
     image: ${MINIO_IMAGE:?Set MINIO_IMAGE to your transferred MinIO image in Docker Hub}
@@ -121,9 +129,41 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - topoz-proxy
+  topoz-frontend:
+    image: ${TOPOS_FRONTEND_IMAGE:?Set TOPOS_FRONTEND_IMAGE to your Docker Hub repository and version tag}
+    pull_policy: always
+    environment:
+      API_URL: http://api:8080
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
+    networks:
+      - topoz-proxy
+  caddy:
+    image: caddy:2
+    container_name: topoz-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      topoz-frontend:
+        condition: service_healthy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - topoz-proxy
 
+networks:
+  topoz-proxy:
+    external: true
 volumes:
   api_dataprotection:
   admin_api_dataprotection:
   postgres_data:
   minio_data:
+  caddy_data:
+  caddy_config:
