@@ -12,7 +12,7 @@ The backup is restored only when the database has no user relations (tables, vie
 
 Every startup pulls all images selected by the compose files and recreates a container when its image has changed. If a pull fails, startup stops. PostgreSQL and MinIO start first; database restoration completes before API migrations run.
 
-Caddy waits for API and frontend healthchecks. With `-WithAdmin`, the admin API starts only after the API is healthy, because only the API migrates the database. The admin panel forwards `/api` to the admin API, so both share one origin. Neither admin service passes through Caddy. Readiness checks use container ports, independent of host port settings in `.env.stage`.
+Caddy waits for API and frontend healthchecks. With `-WithAdmin`, the admin API starts only after the API is healthy, because only the API migrates the database. Caddy serves the admin panel over LAN HTTPS; the panel forwards `/api` to the admin API, so both share one origin. Readiness checks use container ports, independent of host port settings in `.env.stage`.
 
 Starting without `-WithAdmin` does not stop an already running admin stack. Use restart without that flag to return to the default stack.
 
@@ -43,7 +43,7 @@ Caddy forwards `/api` and `/api/*` to `api:8080` and other paths to `topoz-front
 DNS for `topoz.kg` and ports 80/443 must reach this host for public HTTPS. Host diagnostic ports can be changed in `.env.stage`. `FRONTEND_ORIGIN` is set to `https://topoz.kg`.
 
 ## Admin panel
-Start with `-WithAdmin`, then open http://localhost:5083.
+Start with `-WithAdmin`, then open https://192.168.1.183:5083.
 
 Sign in with the email and password of an administrator from the stage database. Development seeds `admin@demo.kg` only into an empty database. To make an existing active customer an administrator:
 
@@ -53,7 +53,25 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml exec api dotnet
 
 Admin API: http://localhost:5082/swagger/index.html
 
-The panel and the admin API listen on localhost by default. For LAN access, set `ADMIN_BIND_ADDRESS` to the server LAN address (for example `192.168.1.10`) or `0.0.0.0`, rerun startup with `-WithAdmin`, then open `http://<server-LAN-IP>:5083`. Allow the panel port in Windows Firewall for the intended LAN. The browser reaches admin-api through admin-web; port 5082 remains bound to localhost.
+Only Caddy publishes the admin UI port, bound to `192.168.1.183:5083`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Keep the server IP fixed; if it changes, update both Caddyfile and the Caddy port binding in docker-compose-stage.yml. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
+
+Caddy uses its internal certificate authority for this private IP. Export its public root certificate after startup (never distribute private keys):
+
+```powershell
+New-Item -ItemType Directory -Force certificates
+docker cp topoz-caddy-stage:/data/caddy/pki/authorities/local/root.crt ./certificates/topoz-stage-root.crt
+certutil -hashfile ./certificates/topoz-stage-root.crt SHA256
+```
+
+Copy `certificates/topoz-stage-root.crt` to each client device through a trusted channel. On Windows, run `certmgr.msc`, select **Trusted Root Certification Authorities / Certificates**, then **All Tasks / Import** and import this certificate for the current user. For all users, an administrator can use `certlm.msc` instead. Restart the browser. Browsers with a separate certificate store may require importing the root there as well. On iOS/iPadOS, install the certificate profile and enable full trust under Settings / General / About / Certificate Trust Settings. On Android, install it as a CA certificate in security settings (menu names vary by device).
+
+On the server, run this once in an elevated PowerShell window to allow LAN access:
+
+```powershell
+New-NetFirewallRule -DisplayName 'TOPOZ Admin HTTPS LAN 5083' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 192.168.1.183 -LocalPort 5083 -RemoteAddress LocalSubnet -Profile Any
+```
+
+Open the HTTPS URL without a certificate warning and check `window.isSecureContext` in the browser console; it should be `true`. Specific browser features may still require user permissions. Trust is needed on clients, not just inside the Docker container. The `caddy_data` volume preserves the CA across normal restarts; if that volume is deleted, export and trust the new root again.
 
 ## Environment
 

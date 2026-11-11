@@ -17,7 +17,7 @@ services:
     environment:
       <<: *admin-environment
     ports:
-      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:${ADMIN_API_PORT:-5082}:8080"
+      - "127.0.0.1:${ADMIN_API_PORT:-5082}:8080"
     volumes:
       - admin_api_dataprotection:/var/usta/dataprotection
     depends_on:
@@ -39,8 +39,6 @@ services:
     pull_policy: always
     environment:
       ADMIN_API_URL: http://admin-api:8080
-    ports:
-      - "${ADMIN_BIND_ADDRESS:-127.0.0.1}:${ADMIN_WEB_PORT:-5083}:80"
     depends_on:
       admin-api:
         condition: service_healthy

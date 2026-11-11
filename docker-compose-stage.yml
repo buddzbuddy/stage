@@ -113,6 +113,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "192.168.1.183:5083:5083"
     depends_on:
       api:
         condition: service_healthy

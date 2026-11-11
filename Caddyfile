@@ -1,3 +1,8 @@
+{
+    # IP clients may omit SNI during the TLS handshake.
+    default_sni 192.168.1.183
+}
+
 topoz.kg {
     encode zstd gzip
 
@@ -9,4 +14,10 @@ topoz.kg {
     handle {
         reverse_proxy topoz-frontend:8080
     }
+}
+
+https://192.168.1.183:5083 {
+    tls internal
+    encode zstd gzip
+    reverse_proxy admin-web:80
 }
