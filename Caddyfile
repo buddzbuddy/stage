@@ -16,6 +16,21 @@ topoz.kg {
     }
 }
 
+# MinIO checks signed photo links against this host and the bucket path: forward both unchanged.
+media.topoz.kg {
+    @photos {
+        method GET HEAD
+        path /kyzmet-order-attachments/*
+    }
+    handle @photos {
+        reverse_proxy minio:9000
+    }
+
+    handle {
+        respond 404
+    }
+}
+
 https://192.168.1.183:5083 {
     tls internal
     encode zstd gzip

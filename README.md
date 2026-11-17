@@ -35,12 +35,22 @@ Runs `stop.ps1`, then runs `startup.ps1` with the selected admin flag only if sh
 
 - Frontend: https://topoz.kg
 - API: https://topoz.kg/api
+- Photos: https://media.topoz.kg
 - Direct frontend for local diagnostics: http://localhost:3000
 - Direct API Swagger: http://localhost:5081/swagger/index.html
 
 Caddy forwards `/api` and `/api/*` to `api:8080` and other paths to `topoz-frontend:8080`. The frontend publishes host port 3000 to container port 8080 and receives `API_PROXY_TARGET=http://api:8080` for its nginx proxy. Browser API requests must use the same-origin `/api` path; the frontend image must be built accordingly.
 
-DNS for `topoz.kg` and ports 80/443 must reach this host for public HTTPS. Host diagnostic ports can be changed in `.env.stage`. `FRONTEND_ORIGIN` is set to `https://topoz.kg`.
+Browsers load photos straight from MinIO, not through the API. The API builds photo links on `MINIO_PUBLIC_URL` (`https://media.topoz.kg`): public photos get permanent links, private ones a `302` to a link signed for 10 minutes. MinIO checks the signature against the host and the path, so Caddy forwards `media.topoz.kg` to `minio:9000` with both unchanged, and only `GET` and `HEAD` under the bucket path (`MINIO_BUCKET`); any other request gets 404. The MinIO console stays on localhost.
+
+DNS for `topoz.kg` and `media.topoz.kg` and ports 80/443 must reach this host for public HTTPS; Caddy obtains both certificates itself. Host diagnostic ports can be changed in `.env.stage`. `FRONTEND_ORIGIN` is set to `https://topoz.kg`.
+
+Caddy reads the Caddyfile when it starts, and a Caddyfile it rejects stops every site, `topoz.kg` included. After changing it, validate the file, then recreate the Caddy container:
+
+```powershell
+docker run --rm -v "$(Join-Path $PWD 'Caddyfile'):/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-admin.yml up -d --force-recreate --no-deps caddy
+```
 
 ## Admin panel
 Start with `-WithAdmin`, then open https://192.168.1.183:5083.
@@ -54,6 +64,8 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml exec api dotnet
 Admin API: http://localhost:5082/swagger/index.html
 
 Only Caddy publishes the admin UI port, bound to `192.168.1.183:5083`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Keep the server IP fixed; if it changes, update both Caddyfile and the Caddy port binding in docker-compose-stage.yml. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
+
+The panel shows photos from `https://media.topoz.kg`, so that name must reach this host from the LAN too: through NAT loopback on the router, or a hosts entry `192.168.1.183 media.topoz.kg` on the client.
 
 Caddy uses its internal certificate authority for this private IP. Export its public root certificate after startup (never distribute private keys):
 

@@ -7,6 +7,8 @@ x-admin-environment: &admin-environment
   Storage__OrderAttachments__SecretKey: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
   Storage__OrderAttachments__BucketName: ${MINIO_BUCKET:-kyzmet-order-attachments}
   Storage__OrderAttachments__Secure: "false"
+  # Browsers load photos straight from MinIO, so links carry the address they reach it by, not minio:9000.
+  Storage__OrderAttachments__PublicBaseUrl: ${MINIO_PUBLIC_URL:?Set MINIO_PUBLIC_URL to the HTTPS address browsers load photos from}
   DataProtection__KeysPath: /var/usta/dataprotection
   PhoneCodes__HashKey: ${PHONE_CODES_HASH_KEY:?Set PHONE_CODES_HASH_KEY}
 
