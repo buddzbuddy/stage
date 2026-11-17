@@ -11,23 +11,16 @@ topoz.kg {
         reverse_proxy api:8080
     }
 
-    handle {
-        reverse_proxy topoz-frontend:8080
-    }
-}
-
-# MinIO checks signed photo links against this host and the bucket path: forward both unchanged.
-media.topoz.kg {
-    @photos {
-        method GET HEAD
-        path /kyzmet-order-attachments/*
-    }
+    # MinIO checks signed photo links against this host and the bucket path: forward both unchanged.
+    @photos path /kyzmet-order-attachments/*
     handle @photos {
+        @write not method GET HEAD
+        respond @write 405
         reverse_proxy minio:9000
     }
 
     handle {
-        respond 404
+        reverse_proxy topoz-frontend:8080
     }
 }
 
