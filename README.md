@@ -87,6 +87,20 @@ Open the HTTPS URL without a certificate warning and check `window.isSecureConte
 
 ## Environment
 
-Development, SMS emulator, test subscriptions/payments and registration without phone confirmation remain enabled. Embedding settings are unchanged; no embedding service is started here.
+Development, test subscriptions/payments and registration without phone confirmation remain enabled; SMS mode is described below. Embedding settings are unchanged; no embedding service is started here.
+
+### SMS
+
+The API uses the SMS emulator unless the host sets `SMS_MODE`. To send real SMS through Nikita, set these variables in the Windows environment of the server only (System Properties → Environment Variables → User variables), never in `.env.stage`: it is committed and shared with local copies of this stack.
+
+| Variable | Value |
+| --- | --- |
+| `SMS_MODE` | `live` |
+| `SMS_NIKITA_LOGIN` | Nikita account login |
+| `SMS_NIKITA_PASSWORD` | Nikita account password |
+| `SMS_NIKITA_SENDER` | Sender name approved by Nikita |
+| `SMS_NIKITA_TEST` | Optional `true`: Nikita accepts requests without delivering them |
+
+Open a new PowerShell window so it sees the variables, then run `.\restart.ps1`; Compose prefers them to `.env.stage`. Set the first four together: `live` with the emulator's placeholder login still starts, and the first SMS fails with Nikita status 2 in the API log. Nikita must also allow the server's public IP (status 3 otherwise) and have a positive balance (status 4). Without the variables the staff route `/api/v1/test/sms/messages` shows emulated messages; in `live` it returns 404.
 
 The main and optional admin compose files each declare the shared API environment because YAML anchors do not span files. Keep their database, storage, phone-code and data-protection settings in sync. Application credentials remain in `.env.stage`.

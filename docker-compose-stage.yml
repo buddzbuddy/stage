@@ -23,10 +23,12 @@ services:
       <<: *host-environment
       Storage__OrderAttachments__AutoCreateBucket: "true"
       Registration__RequirePhoneConfirmation: "false"
-      Sms__Mode: emulator
-      Sms__Nikita__Login: usta-emulator
-      Sms__Nikita__Password: usta-emulator
-      Sms__Nikita__Sender: TOPOZ
+      # Unset variables keep the emulator, so a host without SMS settings never sends real SMS.
+      Sms__Mode: ${SMS_MODE:-emulator}
+      Sms__Nikita__Login: ${SMS_NIKITA_LOGIN:-usta-emulator}
+      Sms__Nikita__Password: ${SMS_NIKITA_PASSWORD:-usta-emulator}
+      Sms__Nikita__Sender: ${SMS_NIKITA_SENDER:-TOPOZ}
+      Sms__Nikita__Test: ${SMS_NIKITA_TEST:-false}
       SubscriptionOffer__Mode: test
       SubscriptionPayment__Mode: test
       SubscriptionPayment__WebhookSecret: ${SUBSCRIPTION_WEBHOOK_SECRET:?Set SUBSCRIPTION_WEBHOOK_SECRET to at least 32 characters}
