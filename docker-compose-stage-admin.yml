@@ -11,6 +11,8 @@ x-admin-environment: &admin-environment
   Storage__OrderAttachments__PublicBaseUrl: ${MINIO_PUBLIC_URL:?Set MINIO_PUBLIC_URL to the HTTPS address browsers load photos from}
   DataProtection__KeysPath: /var/usta/dataprotection
   PhoneCodes__HashKey: ${PHONE_CODES_HASH_KEY:?Set PHONE_CODES_HASH_KEY}
+  OpenTelemetry__Otlp__Endpoint: http://alloy:4317
+  StructuredLogging__JsonConsole: "true"
 
 services:
   admin-api:

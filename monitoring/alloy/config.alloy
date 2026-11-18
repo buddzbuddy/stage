@@ -68,6 +68,86 @@ loki.process "caddy" {
   }
 }
 
+discovery.docker "stage" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=" + sys.env("COMPOSE_PROJECT")]
+  }
+}
+
+discovery.relabel "api" {
+  targets = discovery.docker.stage.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "api|admin-api"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "job"
+  }
+}
+
+loki.source.docker "api" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.api.output
+  forward_to = [loki.process.api.receiver]
+}
+
+loki.process "api" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.json {
+    expressions = {
+      time    = `"@t"`,
+      level   = `"@l"`,
+      context = "SourceContext",
+    }
+  }
+
+  stage.template {
+    source   = "routine"
+    template = `{{ if not .level }}{{ .context }}{{ end }}`
+  }
+
+  // At Information these sources log every SQL command, routing step and outgoing call: ~9 lines a request.
+  stage.drop {
+    source     = "routine"
+    expression = `^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|System\.Net\.Http\.HttpClient)\.`
+  }
+
+  // Serilog's compact JSON leaves @l out at Information, the most common level.
+  stage.template {
+    source   = "level"
+    template = `{{ if .level }}{{ ToLower .level }}{{ else if .time }}information{{ end }}`
+  }
+
+  stage.labels {
+    values = {level = ""}
+  }
+}
+
+otelcol.receiver.otlp "api" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
+  }
+}
+
+// OTLP keeps each counter's start time, which Prometheus turns into a zero sample; remote write would lose it.
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}
+
 loki.write "loki" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
