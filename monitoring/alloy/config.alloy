@@ -1,0 +1,78 @@
+// Exact paths, not a glob: Caddy renames a log before compressing it, and a glob would read the renamed copy again.
+local.file_match "caddy" {
+  path_targets = [
+    {"__path__" = "/var/log/caddy/topoz.log", "job" = "caddy"},
+    {"__path__" = "/var/log/caddy/admin.log", "job" = "caddy"},
+  ]
+}
+
+loki.source.file "caddy" {
+  targets    = local.file_match.caddy.targets
+  forward_to = [loki.process.caddy.receiver]
+}
+
+loki.process "caddy" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.json {
+    expressions = {
+      ts         = "",
+      status     = "",
+      kind       = "",
+      uri        = "request.uri",
+      user_agent = `request.headers."User-Agent"[0]`,
+    }
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "Unix"
+  }
+
+  stage.regex {
+    source     = "user_agent"
+    expression = `(?i)(?P<bot>bot|crawl|spider|slurp|headless|curl|wget|python|scrapy|go-http-client)`
+  }
+
+  stage.regex {
+    source     = "user_agent"
+    expression = `^(?P<loadtest>usta-loadtest)$`
+  }
+
+  stage.template {
+    source   = "status_class"
+    template = `{{ substr 0 1 .status }}xx`
+  }
+
+  stage.template {
+    source   = "route"
+    template = `{{ regexReplaceAll "[?].*" .uri "" }}`
+  }
+
+  stage.template {
+    source   = "route"
+    template = `{{ regexReplaceAll "(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}" .route "{id}" }}`
+  }
+
+  stage.template {
+    source   = "agent"
+    template = `{{ if .loadtest }}loadtest{{ else if or .bot (not .user_agent) }}bot{{ else }}browser{{ end }}`
+  }
+
+  stage.labels {
+    values = {kind = "", status_class = ""}
+  }
+
+  stage.structured_metadata {
+    values = {route = "", agent = ""}
+  }
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+    // The default gives up after 10 retries, about 8 minutes, and drops the batch: retry until Loki is back.
+    max_backoff_retries = 0
+    max_backoff_period  = "30s"
+  }
+}

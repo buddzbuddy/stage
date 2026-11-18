@@ -118,6 +118,7 @@ services:
       - "80:80"
       - "443:443"
       - "192.168.1.183:5083:5083"
+      - "192.168.1.183:5084:5084"
     depends_on:
       api:
         condition: service_healthy
@@ -127,6 +128,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+      - caddy_logs:/var/log/caddy
     networks:
       - topoz-proxy
 
@@ -139,3 +141,4 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
+  caddy_logs:
