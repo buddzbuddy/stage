@@ -34,6 +34,8 @@ services:
       SubscriptionPayment__WebhookSecret: ${SUBSCRIPTION_WEBHOOK_SECRET:?Set SUBSCRIPTION_WEBHOOK_SECRET to at least 32 characters}
       AI__OpenAI__ApiKey: ${OPENAI_API_KEY:-}
       EmbeddingService__BaseUrl: ${EMBEDDING_SERVICE_URL:-http://host.docker.internal:8092}
+      Discovery__Enabled: ${DISCOVERY_ENABLED:-false}
+      Discovery__AlternativeAdmissionProfile: ${DISCOVERY_ALTERNATIVE_ADMISSION_PROFILE:-primary-or-explicit-intents-v3}
       EmbeddingService__CatalogSyncOnStartup: "false"
       Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-https://topoz.kg}
     ports:
