@@ -36,7 +36,7 @@ loki.process "caddy" {
 
   stage.regex {
     source     = "user_agent"
-    expression = `^(?P<loadtest>usta-loadtest)$`
+    expression = `^usta-(?P<own>loadtest|probe)$`
   }
 
   stage.template {
@@ -56,7 +56,7 @@ loki.process "caddy" {
 
   stage.template {
     source   = "agent"
-    template = `{{ if .loadtest }}loadtest{{ else if or .bot (not .user_agent) }}bot{{ else }}browser{{ end }}`
+    template = `{{ if .own }}{{ .own }}{{ else if or .bot (not .user_agent) }}bot{{ else }}browser{{ end }}`
   }
 
   stage.labels {
@@ -145,6 +145,56 @@ otelcol.receiver.otlp "api" {
 otelcol.exporter.otlphttp "prometheus" {
   client {
     endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}
+
+// Every minute through Caddy with the site's own name and certificate, so a quiet log means a broken pipeline.
+prometheus.exporter.blackbox "site" {
+  config = `
+modules:
+  topoz:
+    prober: http
+    timeout: 5s
+    http:
+      headers:
+        Host: topoz.kg
+        User-Agent: usta-probe
+      tls_config:
+        server_name: topoz.kg
+`
+
+  target {
+    name    = "front"
+    address = "https://caddy/healthz"
+    module  = "topoz"
+  }
+
+  target {
+    name    = "api"
+    address = "https://caddy/api/v1/auth/csrf"
+    module  = "topoz"
+  }
+}
+
+discovery.relabel "site" {
+  targets = prometheus.exporter.blackbox.site.targets
+
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/blackbox/(.+)"
+    target_label  = "target"
+  }
+}
+
+prometheus.scrape "site" {
+  targets         = discovery.relabel.site.output
+  scrape_interval = "1m"
+  forward_to      = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 

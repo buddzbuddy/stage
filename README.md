@@ -80,17 +80,19 @@ Configuration lives in `monitoring/`: `alloy/config.alloy`, `loki/config.yaml`, 
 
 Both API hosts send metrics to `alloy:4317` (`OpenTelemetry__Otlp__Endpoint`) and write their console log as JSON (`StructuredLogging__JsonConsole`), with or without the monitoring services; without them the export fails quietly in the background. Alloy labels API log lines with `job` (`api` or `admin-api`) and `level` (`information`, `warning`, `error`…), so `{job="api", level="error"}` finds the API's errors. It leaves out the Information lines of `Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore` and `System.Net.Http.HttpClient`: every SQL command, routing step and outgoing call, about nine lines and 13 KB a request. Loki keeps one line per request, plus warnings, errors and the application's own events; `docker compose logs` still shows everything. In Grafana's Explore, a Caddy line's `X-Correlation-Id` links to the API events of that request. Prometheus names the hosts `job` `Usta.Api` and `Usta.Admin.Api`; traces that the hosts send are dropped. The Docker socket also lets Alloy control every container on this host, so run the monitoring services only on a server you control.
 
-Set the Grafana administrator password in the Windows environment of the server, like the SMS settings and never in `.env.stage`, then open a new PowerShell window and restart:
+Set these variables in the Windows environment of the server, like the SMS settings and never in `.env.stage`, then open a new PowerShell window and restart:
 
 | Variable | Value |
 | --- | --- |
 | `GRAFANA_ADMIN_PASSWORD` | Password of the Grafana user `admin` |
+| `GRAFANA_TELEGRAM_BOT_TOKEN` | Token of the Telegram bot that sends the alerts |
+| `GRAFANA_TELEGRAM_CHAT_ID` | Id of the Telegram chat that receives them; a group's id is negative |
 
 ```powershell
 .\restart.ps1 -WithAdmin -WithMonitoring
 ```
 
-Compose refuses the monitoring file while the variable is unset. Grafana takes the password only when it creates its database; to change it later:
+Compose refuses the monitoring file while any of them is unset. Grafana takes the password only when it creates its database; to change it later:
 
 ```powershell
 docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-monitoring.yml exec grafana grafana cli admin reset-admin-password <new password>
@@ -109,6 +111,23 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compo
 ```
 
 Stopping Loki, Alloy or Grafana does not affect the site. While Loki is down, Alloy retries and sends the missed lines once Loki is back; a restart of Alloy resumes where it stopped. Alloy saves its position every few seconds, so if Alloy is killed rather than stopped, Loki may receive the last seconds of lines twice. Lines in a file that Caddy rotated while Alloy was stopped stay only in that compressed file.
+
+### Alerts
+
+Every minute Alloy requests `https://topoz.kg/healthz` (`front`) and `https://topoz.kg/api/v1/auth/csrf` (`api`) through Caddy, with the site's name and certificate and the User-Agent `usta-probe`. The results go to Prometheus as `probe_success`; the requests appear in the Caddy log with `agent` `probe`, and the «Трафик» panels other than the one of agents leave them out. So the log never stays quiet for long while everything works.
+
+Grafana evaluates the rules of `monitoring/grafana/provisioning/alerting/rules.yaml` every minute and sends firing and resolved alerts to Telegram:
+
+| Alert | Fires when |
+| --- | --- |
+| Сайт не отвечает | the `front` or `api` probe gets no 200 for 2 minutes |
+| API не готов | a host's `/health/ready`, which Docker's healthcheck calls, answers an error for 2 minutes: the database or storage is down |
+| Доля 5xx выше 5 % | more than 5 % of at least 20 visitor requests in 5 minutes got 5xx |
+| Всплеск запросов | for 2 minutes visitors send more than 5 requests a second and five times as many as in the previous hour |
+| Журнал Caddy молчит | Loki has no Caddy line for 10 minutes or does not answer: Caddy, Alloy or Loki is down |
+
+To set up Telegram, create a bot with @BotFather, add it to the team's group and send a message there. `https://api.telegram.org/bot<token>/getUpdates` then shows the group as `chat.id`. After the restart, Alerting → Contact points → Telegram → Test in Grafana sends a test message. Rules, the contact point and the notification policy are provisioned from files like the dashboards: change the YAML, then restart Grafana.
+
 ## Admin panel
 Start with `-WithAdmin`, then open https://192.168.1.183:5083.
 
