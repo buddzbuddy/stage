@@ -1,0 +1,208 @@
+// Exact paths, not a glob: Caddy renames a log before compressing it, and a glob would read the renamed copy again.
+local.file_match "caddy" {
+  path_targets = [
+    {"__path__" = "/var/log/caddy/topoz.log", "job" = "caddy"},
+    {"__path__" = "/var/log/caddy/admin.log", "job" = "caddy"},
+  ]
+}
+
+loki.source.file "caddy" {
+  targets    = local.file_match.caddy.targets
+  forward_to = [loki.process.caddy.receiver]
+}
+
+loki.process "caddy" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.json {
+    expressions = {
+      ts         = "",
+      status     = "",
+      kind       = "",
+      uri        = "request.uri",
+      user_agent = `request.headers."User-Agent"[0]`,
+    }
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "Unix"
+  }
+
+  stage.regex {
+    source     = "user_agent"
+    expression = `(?i)(?P<bot>bot|crawl|spider|slurp|headless|curl|wget|python|scrapy|go-http-client)`
+  }
+
+  stage.regex {
+    source     = "user_agent"
+    expression = `^usta-(?P<own>loadtest|probe)$`
+  }
+
+  stage.template {
+    source   = "status_class"
+    template = `{{ substr 0 1 .status }}xx`
+  }
+
+  stage.template {
+    source   = "route"
+    template = `{{ regexReplaceAll "[?].*" .uri "" }}`
+  }
+
+  stage.template {
+    source   = "route"
+    template = `{{ regexReplaceAll "(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}" .route "{id}" }}`
+  }
+
+  stage.template {
+    source   = "agent"
+    template = `{{ if .own }}{{ .own }}{{ else if or .bot (not .user_agent) }}bot{{ else }}browser{{ end }}`
+  }
+
+  stage.labels {
+    values = {kind = "", status_class = ""}
+  }
+
+  stage.structured_metadata {
+    values = {route = "", agent = ""}
+  }
+}
+
+discovery.docker "stage" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=" + sys.env("COMPOSE_PROJECT")]
+  }
+}
+
+discovery.relabel "api" {
+  targets = discovery.docker.stage.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "api|admin-api"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "job"
+  }
+}
+
+loki.source.docker "api" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.api.output
+  forward_to = [loki.process.api.receiver]
+}
+
+loki.process "api" {
+  forward_to = [loki.write.loki.receiver]
+
+  stage.json {
+    expressions = {
+      time    = `"@t"`,
+      level   = `"@l"`,
+      context = "SourceContext",
+    }
+  }
+
+  stage.template {
+    source   = "routine"
+    template = `{{ if not .level }}{{ .context }}{{ end }}`
+  }
+
+  // At Information these sources log every SQL command, routing step and outgoing call: ~9 lines a request.
+  stage.drop {
+    source     = "routine"
+    expression = `^(Microsoft\.AspNetCore|Microsoft\.EntityFrameworkCore|System\.Net\.Http\.HttpClient)\.`
+  }
+
+  // Serilog's compact JSON leaves @l out at Information, the most common level.
+  stage.template {
+    source   = "level"
+    template = `{{ if .level }}{{ ToLower .level }}{{ else if .time }}information{{ end }}`
+  }
+
+  stage.labels {
+    values = {level = ""}
+  }
+}
+
+otelcol.receiver.otlp "api" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  output {
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
+  }
+}
+
+// OTLP keeps each counter's start time, which Prometheus turns into a zero sample; remote write would lose it.
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}
+
+// Every minute through Caddy with the site's own name and certificate, so a quiet log means a broken pipeline.
+prometheus.exporter.blackbox "site" {
+  config = `
+modules:
+  topoz:
+    prober: http
+    timeout: 5s
+    http:
+      headers:
+        Host: topoz.kg
+        User-Agent: usta-probe
+      tls_config:
+        server_name: topoz.kg
+`
+
+  target {
+    name    = "front"
+    address = "https://caddy/healthz"
+    module  = "topoz"
+  }
+
+  target {
+    name    = "api"
+    address = "https://caddy/api/v1/auth/csrf"
+    module  = "topoz"
+  }
+}
+
+discovery.relabel "site" {
+  targets = prometheus.exporter.blackbox.site.targets
+
+  rule {
+    source_labels = ["job"]
+    regex         = "integrations/blackbox/(.+)"
+    target_label  = "target"
+  }
+}
+
+prometheus.scrape "site" {
+  targets         = discovery.relabel.site.output
+  scrape_interval = "1m"
+  forward_to      = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+    // The default gives up after 10 retries, about 8 minutes, and drops the batch: retry until Loki is back.
+    max_backoff_retries = 0
+    max_backoff_period  = "30s"
+  }
+}

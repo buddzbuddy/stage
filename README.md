@@ -4,9 +4,11 @@
 .\startup.ps1
 # Include admin-api and admin-web:
 .\startup.ps1 -WithAdmin
+# Include the request monitoring (Alloy, Loki, Grafana):
+.\startup.ps1 -WithAdmin -WithMonitoring
 ```
 
-The default stack contains PostgreSQL, MinIO, API, frontend and Caddy. The optional `docker-compose-stage-admin.yml` adds the admin services. Scripts resolve paths relative to their own directory.
+The default stack contains PostgreSQL, MinIO, API, frontend and Caddy. The optional `docker-compose-stage-admin.yml` adds the admin services, `docker-compose-stage-monitoring.yml` the request monitoring. Scripts resolve paths relative to their own directory.
 
 The backup is restored only when the database has no user relations (tables, views, or sequences). Subsequent runs preserve the existing database and skip restoration. Restores run in a single transaction so a failed restore does not leave partially restored data. An existing database, including one partially restored by an older script, is preserved; this check does not validate its completeness.
 
@@ -14,22 +16,23 @@ Every startup pulls all images selected by the compose files and recreates a con
 
 Caddy waits for API and frontend healthchecks. With `-WithAdmin`, the admin API starts only after the API is healthy, because only the API migrates the database. Caddy serves the admin panel over LAN HTTPS; the panel forwards `/api` to the admin API, so both share one origin. Readiness checks use container ports, independent of host port settings in `.env.stage`.
 
-Starting without `-WithAdmin` does not stop an already running admin stack. Use restart without that flag to return to the default stack.
+Starting without `-WithAdmin` or `-WithMonitoring` does not stop an already running admin or monitoring stack. Use restart without that flag to return to the default stack.
 
 ## Stop containers
 ```powershell
 .\stop.ps1
 ```
 
-Stops and removes all staging containers, including admin services, and the Compose-managed network. Database, attachment, data protection and Caddy volumes are preserved. The network is created automatically; no external network setup is required.
+Stops and removes all staging containers, including admin and monitoring services, and the Compose-managed network. Database, attachment, data protection, Caddy, log and monitoring volumes are preserved. The network is created automatically; no external network setup is required.
 
 ## Restart containers
 ```powershell
 .\restart.ps1
 .\restart.ps1 -WithAdmin
+.\restart.ps1 -WithAdmin -WithMonitoring
 ```
 
-Runs `stop.ps1`, then runs `startup.ps1` with the selected admin flag only if shutdown succeeds.
+Runs `stop.ps1`, then runs `startup.ps1` with the selected flags only if shutdown succeeds.
 
 ## Application
 
@@ -52,6 +55,79 @@ docker run --rm -v "$(Join-Path $PWD 'Caddyfile'):/etc/caddy/Caddyfile:ro" caddy
 docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-admin.yml up -d --force-recreate --no-deps caddy
 ```
 
+## Request log
+
+Caddy writes a JSON line for every request it has answered into the `caddy_logs` volume: `topoz.log` for `topoz.kg` and `admin.log` for the admin panel. The line goes to a local file after the response, so writing it costs no network call and does not slow responses. Caddy rotates each file at 100 MiB and keeps 10 compressed copies for up to 30 days, about 250 MB on disk.
+
+A line holds `ts`, `status`, `size` (response body bytes sent, after compression), `bytes_read` (request body bytes), `duration` in seconds, `request` (`remote_ip`, `client_ip`, `method`, `host`, `uri`, `headers`), `resp_headers` and `kind`: `api`, `photos`, `front` or `admin`, set by the Caddy route that handled the request. Caddy writes `Cookie`, `Set-Cookie`, `Authorization` and `Proxy-Authorization` values as `REDACTED`, and the log filter removes `X-Amz-Signature` and `X-Amz-Credential` from photo links, both in requested URIs and in the `Location` of the API's redirects to private photos. Request and response bodies are not logged. `resp_headers` carries the API's `X-Correlation-Id`, which leads from a log line to the API's own events.
+
+```powershell
+docker compose --env-file .env.stage -f docker-compose-stage.yml exec caddy tail -n 5 /var/log/caddy/topoz.log
+```
+
+Docker Desktop forwards published ports from its own gateway, so `remote_ip` and `client_ip` show that gateway rather than the visitor. The frontend's nginx forwards the SignalR hub `/hubs/` to the API, so hub requests carry `kind` `front`.
+
+## Monitoring
+
+`-WithMonitoring` adds four services that collect the request log, the API's own log and its metrics without touching the site:
+
+- Grafana Alloy follows `topoz.log` and `admin.log` through a read-only mount of `caddy_logs` and sends new lines to Loki. Its position in each file is kept in the `alloy_data` volume. It also reads the output of the `api` and `admin-api` containers of this Compose project through the Docker socket and receives their OpenTelemetry metrics on port 4317 inside the Compose network.
+- Loki stores the log lines for 30 days in the `loki_data` volume and parses their fields when queried.
+- Prometheus stores the API metrics for 90 days in the `prometheus_data` volume.
+- Grafana shows them at https://192.168.1.183:5084: the «Трафик» and «API» dashboards and Drilldown → Logs.
+
+Configuration lives in `monitoring/`: `alloy/config.alloy`, `loki/config.yaml`, Grafana's data source and dashboard provisioning, and the dashboards as JSON in `grafana/dashboards/`. Alloy labels every Caddy line with `kind` and `status_class` (`2xx`…`5xx`) and attaches `route` (the path without its query, every GUID replaced by `{id}`) and `agent` (`loadtest` for k6, `bot` for bots, tools and an empty User-Agent, `browser` otherwise). At rest the four services take about 0.5 GB of memory.
+
+Both API hosts send metrics to `alloy:4317` (`OpenTelemetry__Otlp__Endpoint`) and write their console log as JSON (`StructuredLogging__JsonConsole`), with or without the monitoring services; without them the export fails quietly in the background. Alloy labels API log lines with `job` (`api` or `admin-api`) and `level` (`information`, `warning`, `error`…), so `{job="api", level="error"}` finds the API's errors. It leaves out the Information lines of `Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore` and `System.Net.Http.HttpClient`: every SQL command, routing step and outgoing call, about nine lines and 13 KB a request. Loki keeps one line per request, plus warnings, errors and the application's own events; `docker compose logs` still shows everything. In Grafana's Explore, a Caddy line's `X-Correlation-Id` links to the API events of that request. Prometheus names the hosts `job` `Usta.Api` and `Usta.Admin.Api`; traces that the hosts send are dropped. The Docker socket also lets Alloy control every container on this host, so run the monitoring services only on a server you control.
+
+Set these variables in the Windows environment of the server, like the SMS settings and never in `.env.stage`, then open a new PowerShell window and restart:
+
+| Variable | Value |
+| --- | --- |
+| `GRAFANA_ADMIN_PASSWORD` | Password of the Grafana user `admin` |
+| `GRAFANA_TELEGRAM_BOT_TOKEN` | Token of the Telegram bot that sends the alerts |
+| `GRAFANA_TELEGRAM_CHAT_ID` | Id of the Telegram chat that receives them; a group's id is negative |
+
+```powershell
+.\restart.ps1 -WithAdmin -WithMonitoring
+```
+
+Compose refuses the monitoring file while any of them is unset. Grafana takes the password only when it creates its database; to change it later:
+
+```powershell
+docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-monitoring.yml exec grafana grafana cli admin reset-admin-password <new password>
+```
+
+Caddy serves Grafana like the admin panel, with the same internal certificate, so clients that trust the admin panel trust Grafana too. Sign-up and anonymous access are off. Allow the port on the LAN once, in an elevated PowerShell window:
+
+```powershell
+New-NetFirewallRule -DisplayName 'TOPOZ Grafana HTTPS LAN 5084' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 192.168.1.183 -LocalPort 5084 -RemoteAddress LocalSubnet -Profile Any
+```
+
+Grafana loads dashboards from the JSON files when it starts and does not let the UI save over them. To change one, edit it in Grafana, copy its JSON from Export into the file under `monitoring/grafana/dashboards/`, then restart Grafana:
+
+```powershell
+docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-monitoring.yml restart grafana
+```
+
+Stopping Loki, Alloy or Grafana does not affect the site. While Loki is down, Alloy retries and sends the missed lines once Loki is back; a restart of Alloy resumes where it stopped. Alloy saves its position every few seconds, so if Alloy is killed rather than stopped, Loki may receive the last seconds of lines twice. Lines in a file that Caddy rotated while Alloy was stopped stay only in that compressed file.
+
+### Alerts
+
+Every minute Alloy requests `https://topoz.kg/healthz` (`front`) and `https://topoz.kg/api/v1/auth/csrf` (`api`) through Caddy, with the site's name and certificate and the User-Agent `usta-probe`. The results go to Prometheus as `probe_success`; the requests appear in the Caddy log with `agent` `probe`, and the «Трафик» panels other than the one of agents leave them out. So the log never stays quiet for long while everything works.
+
+Grafana evaluates the rules of `monitoring/grafana/provisioning/alerting/rules.yaml` every minute and sends firing and resolved alerts to Telegram:
+
+| Alert | Fires when |
+| --- | --- |
+| Сайт не отвечает | the `front` or `api` probe gets no 200 for 2 minutes |
+| API не готов | a host's `/health/ready`, which Docker's healthcheck calls, answers an error for 2 minutes: the database or storage is down |
+| Доля 5xx выше 5 % | more than 5 % of at least 20 visitor requests in 5 minutes got 5xx |
+| Всплеск запросов | for 2 minutes visitors send more than 5 requests a second and five times as many as in the previous hour |
+| Журнал Caddy молчит | Loki has no Caddy line for 10 minutes or does not answer: Caddy, Alloy or Loki is down |
+
+To set up Telegram, create a bot with @BotFather, add it to the team's group and send a message there. `https://api.telegram.org/bot<token>/getUpdates` then shows the group as `chat.id`. After the restart, Alerting → Contact points → Telegram → Test in Grafana sends a test message. Rules, the contact point and the notification policy are provisioned from files like the dashboards: change the YAML, then restart Grafana.
+
 ## Admin panel
 Start with `-WithAdmin`, then open https://192.168.1.183:5083.
 
@@ -63,7 +139,7 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml exec api dotnet
 
 Admin API: http://localhost:5082/swagger/index.html
 
-Only Caddy publishes the admin UI port, bound to `192.168.1.183:5083`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Keep the server IP fixed; if it changes, update both Caddyfile and the Caddy port binding in docker-compose-stage.yml. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
+Only Caddy publishes the admin UI port, bound to `192.168.1.183:5083`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Keep the server IP fixed; if it changes, update the Caddyfile, the Caddy port bindings in docker-compose-stage.yml and `GF_SERVER_ROOT_URL` in docker-compose-stage-monitoring.yml. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
 
 The panel shows photos from `https://topoz.kg`, so that name must reach this host from the LAN too: through NAT loopback on the router, or a hosts entry `192.168.1.183 topoz.kg` on the client.
 

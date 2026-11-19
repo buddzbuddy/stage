@@ -1,0 +1,181 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: topoz
+    folder: Оповещения
+    interval: 1m
+    rules:
+      - uid: site-down
+        title: Сайт не отвечает
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: min by (target) (probe_success)
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: 'Проверка {{ $labels.target }} через Caddy две минуты не получает ответ 200.'
+
+      - uid: api-not-ready
+        title: API не готов
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum by (job) (rate(http_server_request_duration_seconds_count{http_route="/health/ready",
+                http_response_status_code!="200"}[5m]))
+              instant: true
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: '{{ $labels.job }} отвечает на проверку готовности ошибкой: недоступна база данных или хранилище.'
+
+      - uid: server-errors
+        title: Доля 5xx выше 5 %
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({job="caddy", status_class="5xx"} | agent != "probe" | keep kind [5m]))
+              queryType: instant
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: B
+              expr: sum(count_over_time({job="caddy"} | agent != "probe" | keep kind [5m]))
+              queryType: instant
+          - refId: D
+            datasourceUid: __expr__
+            model:
+              refId: D
+              type: math
+              expression: $A / $B
+          # Twenty requests at least: one failed request of two is not an outage.
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: $D > 0.05 && $B >= 20
+        noDataState: OK
+        execErrState: OK
+        for: 0s
+        annotations:
+          summary: 'За 5 минут {{ humanizePercentage $values.D.Value }} ответов 5xx из {{ $values.B.Value }} запросов.'
+
+      - uid: traffic-spike
+        title: Всплеск запросов
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({job="caddy"} | agent != "probe" | keep kind [5m]))
+              queryType: instant
+          - refId: B
+            relativeTimeRange:
+              from: 3900
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: B
+              expr: sum(count_over_time({job="caddy"} | agent != "probe" | keep kind [1h] offset 5m)) or vector(0)
+              queryType: instant
+          - refId: D
+            datasourceUid: __expr__
+            model:
+              refId: D
+              type: math
+              expression: $A / 300
+          # Five times the previous hour, and at least 5 requests a second so a quiet night does not count.
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: math
+              expression: $D > 5 * $B / 3600 && $D > 5
+        noDataState: OK
+        execErrState: OK
+        for: 2m
+        annotations:
+          summary: 'Запросов в секунду за 5 минут: {{ humanize $values.D.Value }} — в пять раз больше прошлого часа.'
+
+      - uid: caddy-silent
+        title: Журнал Caddy молчит
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: A
+              expr: sum(count_over_time({job="caddy"}[10m]))
+              queryType: instant
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params:
+                      - 1
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: 'Ни одной строки Caddy за 10 минут при проверке сайта раз в минуту: стоит Caddy, Alloy или Loki.'

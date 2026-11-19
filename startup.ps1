@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$WithAdmin
+    [switch]$WithAdmin,
+    [switch]$WithMonitoring
 )
 
 
@@ -14,6 +15,10 @@ $compose = @(
 
 if ($WithAdmin) {
     $compose += @("-f", (Join-Path $PSScriptRoot "docker-compose-stage-admin.yml"))
+}
+
+if ($WithMonitoring) {
+    $compose += @("-f", (Join-Path $PSScriptRoot "docker-compose-stage-monitoring.yml"))
 }
 
 function Run-Docker {
@@ -104,5 +109,8 @@ else {
 $services = @("api", "topoz-frontend", "caddy")
 if ($WithAdmin) {
     $services += @("admin-api", "admin-web")
+}
+if ($WithMonitoring) {
+    $services += @("loki", "alloy", "grafana")
 }
 Run-Docker up -d --wait @services
