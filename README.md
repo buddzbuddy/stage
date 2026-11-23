@@ -188,7 +188,7 @@ The main and optional admin compose files each declare the shared API environmen
 
 ### Codes in WhatsApp and Telegram
 
-Phone codes go by SMS until the host turns a messenger on. Then the site shows its button, and a user who presses it gets the code in WhatsApp or Telegram. A messenger that is off, out of its daily budget or refusing a code sends the same code by SMS, so turning one on never stops codes. Turn them on one at a time with a small daily budget, for example 30, check each on real phones as the acceptance on real numbers describes (`usta/backend/docs/api/sms-auth-acceptance.md` in the kyzmet_mvp repository), watch «Коды подтверждения» for a few days, then raise the budget.
+Without the variables below, WhatsApp is off and Telegram runs on the emulator. A messenger that is on gets its button on the site, and a user who presses it gets the code in WhatsApp or Telegram. A messenger that is off, out of its daily budget or refusing a code sends the same code by SMS, so turning one on never stops codes. Turn them on one at a time with a small daily budget, for example 30, check each on real phones as the acceptance on real numbers describes (`usta/backend/docs/api/sms-auth-acceptance.md` in the kyzmet_mvp repository), watch «Коды подтверждения» for a few days, then raise the budget.
 
 WhatsApp needs a business portfolio verified by Meta and an approved authentication template. Until both are ready, leave the `WHATSAPP_*` variables unset: the API keeps WhatsApp off, and the site shows no WhatsApp button.
 
@@ -207,7 +207,7 @@ Set these variables in the Windows environment of the server, like the SMS setti
 | `WHATSAPP_VERIFY_TOKEN` | A long random string, also typed as Verify token in the webhook settings of the Meta app |
 | `WHATSAPP_DAILY_LIMIT` | Codes a day through WhatsApp, then SMS; 250 when unset, never above Meta's daily recipient limit |
 
-Open a new PowerShell window, then run `.\restart.ps1`. Set a messenger's variables together: `live` with a missing or malformed setting stops the API at startup, and Caddy waits for its healthcheck. Never set `emulator` here: the stack runs in Development, so the API accepts it, and the emulator would take real users' codes that never reach their phones. `https://topoz.kg/api/v1/auth/phone-codes/channels` lists the messengers that are on.
+Open a new PowerShell window, then run `.\restart.ps1`. Set a messenger's variables together. WhatsApp in `live` with a missing or malformed setting stops the API at startup, and Caddy waits for its healthcheck. Telegram in `live` without `TELEGRAM_GATEWAY_TOKEN` still starts with the emulator's placeholder token: Gateway refuses every code, the code goes by SMS, and «Провайдер кодов отказывает из-за настроек или оплаты» fires. Without `TELEGRAM_MODE` the stack, which runs in Development, keeps the Telegram emulator: codes asked for in Telegram reach no phone, and the staff route `/api/v1/test/telegram/messages` shows them; in `live` it returns 404. So set `live` before the site shows the Telegram button to real users, or `disabled` to keep every code on SMS. `https://topoz.kg/api/v1/auth/phone-codes/channels` lists the messengers that are on.
 
 Telegram takes its balance from Fragment; codes to the number of the Gateway account's owner are free, which suits the first check. The «Заканчивается баланс Telegram Gateway» alert fires below 10.
 
