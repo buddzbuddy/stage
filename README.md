@@ -190,6 +190,8 @@ The main and optional admin compose files each declare the shared API environmen
 
 Phone codes go by SMS until the host turns a messenger on. Then the site shows its button, and a user who presses it gets the code in WhatsApp or Telegram. A messenger that is off, out of its daily budget or refusing a code sends the same code by SMS, so turning one on never stops codes. Turn them on one at a time with a small daily budget, for example 30, check each on real phones as the acceptance on real numbers describes (`usta/backend/docs/api/sms-auth-acceptance.md` in the kyzmet_mvp repository), watch «Коды подтверждения» for a few days, then raise the budget.
 
+WhatsApp needs a business portfolio verified by Meta and an approved authentication template. Until both are ready, leave the `WHATSAPP_*` variables unset: the API keeps WhatsApp off, and the site shows no WhatsApp button.
+
 Set these variables in the Windows environment of the server, like the SMS settings, never in `.env.stage`:
 
 | Variable | Value |
