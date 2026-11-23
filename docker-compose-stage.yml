@@ -31,6 +31,17 @@ services:
       Sms__Nikita__Password: ${SMS_NIKITA_PASSWORD:-usta-emulator}
       Sms__Nikita__Sender: ${SMS_NIKITA_SENDER:-TOPOZ}
       Sms__Nikita__Test: ${SMS_NIKITA_TEST:-false}
+      # Unset variables keep both messengers off, so every code still goes by SMS.
+      Telegram__Mode: ${TELEGRAM_MODE:-disabled}
+      Telegram__Gateway__Token: ${TELEGRAM_GATEWAY_TOKEN:-}
+      PhoneCodes__Channels__Telegram__DailyLimit: ${TELEGRAM_DAILY_LIMIT:-250}
+      Whatsapp__Mode: ${WHATSAPP_MODE:-disabled}
+      Whatsapp__CloudApi__PhoneNumberId: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      Whatsapp__CloudApi__AccessToken: ${WHATSAPP_ACCESS_TOKEN:-}
+      Whatsapp__CloudApi__TemplateName: ${WHATSAPP_TEMPLATE_NAME:-}
+      Whatsapp__Webhook__AppSecret: ${WHATSAPP_APP_SECRET:-}
+      Whatsapp__Webhook__VerifyToken: ${WHATSAPP_VERIFY_TOKEN:-}
+      PhoneCodes__Channels__Whatsapp__DailyLimit: ${WHATSAPP_DAILY_LIMIT:-250}
       SubscriptionOffer__Mode: test
       SubscriptionPayment__Mode: test
       SubscriptionPayment__WebhookSecret: ${SUBSCRIPTION_WEBHOOK_SECRET:?Set SUBSCRIPTION_WEBHOOK_SECRET to at least 32 characters}
@@ -40,6 +51,8 @@ services:
       Discovery__AlternativeAdmissionProfile: ${DISCOVERY_ALTERNATIVE_ADMISSION_PROFILE:-primary-or-explicit-intents-v3}
       EmbeddingService__CatalogSyncOnStartup: "false"
       Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-https://topoz.kg}
+      # Caddy reaches the API from a Docker network; its X-Forwarded-For carries the visitor's address.
+      ForwardedHeaders__KnownNetworks__0: ${TRUSTED_PROXY_NETWORK:-172.16.0.0/12}
     ports:
       - "${STAGE_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8081}:8080"
     volumes:

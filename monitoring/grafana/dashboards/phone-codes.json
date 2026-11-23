@@ -1,0 +1,1000 @@
+{
+  "uid": "phone-codes",
+  "title": "Коды подтверждения",
+  "description": "Коды по каналам и исходам, откаты на SMS, статусы WhatsApp, баланс Telegram и оценка расходов по ценам из переменных.",
+  "tags": [
+    "api",
+    "phone-codes"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "schemaVersion": 41,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "sms_price",
+        "label": "SMS, сом",
+        "description": "Цена SMS с кодом через точку: 1,51–2,03 по оператору",
+        "type": "textbox",
+        "query": "1.77",
+        "current": {
+          "selected": false,
+          "text": "1.77",
+          "value": "1.77"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "1.77",
+            "value": "1.77"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "whatsapp_price",
+        "label": "WhatsApp, сом",
+        "description": "Цена доставленного кода WhatsApp через точку",
+        "type": "textbox",
+        "query": "0.67",
+        "current": {
+          "selected": false,
+          "text": "0.67",
+          "value": "0.67"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "0.67",
+            "value": "0.67"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "telegram_price",
+        "label": "Telegram, сом",
+        "description": "Цена кода Telegram Gateway через точку",
+        "type": "textbox",
+        "query": "0.88",
+        "current": {
+          "selected": false,
+          "text": "0.88",
+          "value": "0.88"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "0.88",
+            "value": "0.88"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Коды за период",
+      "description": "Сообщения с кодом, которые принял провайдер. SMS без ответа Nikita в срок (unknown) тоже считается: скорее всего, оно ушло.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(phone_codes_outcomes_total{outcome=~\"sent|unknown\"}[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Через мессенджеры",
+      "description": "Доля оплачиваемых сообщений WhatsApp и Telegram. Код WhatsApp, о недоставке которого сообщила Meta, не считается: вместо него ушло SMS.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(((sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", outcome=\"sent\"}[$__range])) or vector(0)) - (sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", reason=\"undelivered\"}[$__range])) or vector(0))) + (sum(increase(phone_codes_outcomes_total{channel=\"telegram\", outcome=\"sent\"}[$__range])) or vector(0))) / ((sum(increase(phone_codes_outcomes_total{channel=\"sms\", outcome=~\"sent|unknown\"}[$__range])) or vector(0)) + ((sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", outcome=\"sent\"}[$__range])) or vector(0)) - (sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", reason=\"undelivered\"}[$__range])) or vector(0))) + (sum(increase(phone_codes_outcomes_total{channel=\"telegram\", outcome=\"sent\"}[$__range])) or vector(0)))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Откаты на SMS",
+      "description": "Коды, которые мессенджер не взял или не доставил и которые пошли по SMS. Причины — на панели откатов.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(phone_codes_outcomes_total{outcome=\"fallback\"}[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Отказы",
+      "description": "Коды, которые не ушли ни одним каналом: исчерпан бюджет SMS, провайдер отказал или SMS не подтвердило бы номер в профиле.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(phone_codes_outcomes_total{outcome=\"refused\"}[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Расходы за период",
+      "description": "Оценка по ценам из переменных панели: SMS, принятые Nikita; коды WhatsApp, принятые Meta, без недоставленных; коды Telegram, принятые Gateway, без возврата за недоставленные.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(phone_codes_outcomes_total{channel=\"sms\", outcome=~\"sent|unknown\"}[$__range])) or vector(0)) * $sms_price + ((sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", outcome=\"sent\"}[$__range])) or vector(0)) - (sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", reason=\"undelivered\"}[$__range])) or vector(0))) * $whatsapp_price + (sum(increase(phone_codes_outcomes_total{channel=\"telegram\", outcome=\"sent\"}[$__range])) or vector(0)) * $telegram_price",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: сом",
+          "decimals": 2,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Экономия против SMS",
+      "description": "Цена тех же кодов мессенджеров по SMS минус их цена. Верхняя оценка: код мессенджера, после которого пользователь запросил SMS, тоже считается сэкономленным.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", outcome=\"sent\"}[$__range])) or vector(0)) - (sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", reason=\"undelivered\"}[$__range])) or vector(0))) * ($sms_price - $whatsapp_price) + (sum(increase(phone_codes_outcomes_total{channel=\"telegram\", outcome=\"sent\"}[$__range])) or vector(0)) * ($sms_price - $telegram_price)",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: сом",
+          "decimals": 2,
+          "noValue": "0",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "type": "piechart",
+      "title": "Каналы за период",
+      "description": "Сообщения с кодом, которые принял провайдер, по каналам.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (channel) (increase(phone_codes_outcomes_total{outcome=~\"sent|unknown\"}[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code",
+          "legendFormat": "{{channel}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Расходы по каналам",
+      "description": "Та же оценка, что в «Расходах за период», по каналам.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(phone_codes_outcomes_total{channel=\"sms\", outcome=~\"sent|unknown\"}[$__range])) or vector(0)) * $sms_price",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code",
+          "legendFormat": "SMS"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "((sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", outcome=\"sent\"}[$__range])) or vector(0)) - (sum(increase(phone_codes_outcomes_total{channel=\"whatsapp\", reason=\"undelivered\"}[$__range])) or vector(0))) * $whatsapp_price",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code",
+          "legendFormat": "WhatsApp"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(increase(phone_codes_outcomes_total{channel=\"telegram\", outcome=\"sent\"}[$__range])) or vector(0)) * $telegram_price",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code",
+          "legendFormat": "Telegram"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: сом",
+          "decimals": 2,
+          "min": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "maxVizHeight": 300
+      }
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Откаты за период по причинам",
+      "description": "disabled — мессенджер выключен, unconfirmed — у аккаунта нет отметки мессенджера для входа, budget — исчерпан дневной бюджет мессенджера, undelivered — Meta сообщила о недоставке, остальное — отказ провайдера.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (channel, reason) (increase(phone_codes_outcomes_total{outcome=\"fallback\"}[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "time_series",
+          "editorMode": "code",
+          "legendFormat": "{{channel}} · {{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "noValue": "0",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "namePlacement": "auto",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "maxVizHeight": 300
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Коды по каналам",
+      "description": "Сообщения с кодом, которые принял провайдер, по часам.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "interval": "5m",
+      "maxDataPoints": 168,
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (channel) (increase(phone_codes_outcomes_total{outcome=~\"sent|unknown\"}[$__interval]))",
+          "legendFormat": "{{channel}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Откаты и отказы",
+      "description": "fallback — код пошёл по SMS, refused — код не ушёл. Канал — тот, что не доставил код.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "interval": "5m",
+      "maxDataPoints": 168,
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (channel, outcome, reason) (increase(phone_codes_outcomes_total{outcome=~\"fallback|refused\"}[$__interval]))",
+          "legendFormat": "{{channel}} · {{outcome}} · {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Статусы WhatsApp",
+      "description": "Статусы, которые прислал вебхук Meta. У failed — класс ошибки: rejected — номер без WhatsApp и прочие отказы, misconfigured — токен, номер или шаблон, insufficient_funds — оплата.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "interval": "5m",
+      "maxDataPoints": 168,
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (status, reason) (increase(phone_codes_whatsapp_statuses_total[$__interval]))",
+          "legendFormat": "{{status}} {{reason}}",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "barAlignment": -1,
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Баланс Telegram Gateway",
+      "description": "Остаток после последнего оплаченного кода. Линия — порог оповещения.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min(phone_codes_telegram_balance)",
+          "legendFormat": "Баланс",
+          "range": true,
+          "instant": false,
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "axisSoftMax": 12,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Исходы за период",
+      "description": "Канал, исход и причина каждого счёта; increase() приблизителен, поэтому числа округлены.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (channel, outcome, reason) (increase(phone_codes_outcomes_total[$__range]))",
+          "range": false,
+          "instant": true,
+          "format": "table",
+          "editorMode": "code"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "channel": "Канал",
+              "outcome": "Исход",
+              "reason": "Причина",
+              "Value": "Кодов"
+            },
+            "indexByName": {
+              "channel": 0,
+              "outcome": 1,
+              "reason": 2,
+              "Value": 3
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Кодов",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    }
+  ]
+}
