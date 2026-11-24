@@ -74,11 +74,13 @@ Docker Desktop forwards published ports from its own gateway, so `remote_ip` and
 - Grafana Alloy follows `topoz.log` and `admin.log` through a read-only mount of `caddy_logs` and sends new lines to Loki. Its position in each file is kept in the `alloy_data` volume. It also reads the output of the `api` and `admin-api` containers of this Compose project through the Docker socket and receives their OpenTelemetry metrics on port 4317 inside the Compose network.
 - Loki stores the log lines for 30 days in the `loki_data` volume and parses their fields when queried.
 - Prometheus stores the API metrics for 90 days in the `prometheus_data` volume.
-- Grafana shows them at https://192.168.1.183:5084: the «Трафик» and «API» dashboards and Drilldown → Logs.
+- Grafana shows them at https://192.168.1.183:5084: the «Трафик», «API» and «Коды подтверждения» dashboards and Drilldown → Logs.
 
 Configuration lives in `monitoring/`: `alloy/config.alloy`, `loki/config.yaml`, Grafana's data source and dashboard provisioning, and the dashboards as JSON in `grafana/dashboards/`. Alloy labels every Caddy line with `kind` and `status_class` (`2xx`…`5xx`) and attaches `route` (the path without its query, every GUID replaced by `{id}`) and `agent` (`loadtest` for k6, `bot` for bots, tools and an empty User-Agent, `browser` otherwise). At rest the four services take about 0.5 GB of memory.
 
 Both API hosts send metrics to `alloy:4317` (`OpenTelemetry__Otlp__Endpoint`) and write their console log as JSON (`StructuredLogging__JsonConsole`), with or without the monitoring services; without them the export fails quietly in the background. Alloy labels API log lines with `job` (`api` or `admin-api`) and `level` (`information`, `warning`, `error`…), so `{job="api", level="error"}` finds the API's errors. It leaves out the Information lines of `Microsoft.AspNetCore`, `Microsoft.EntityFrameworkCore` and `System.Net.Http.HttpClient`: every SQL command, routing step and outgoing call, about nine lines and 13 KB a request. Loki keeps one line per request, plus warnings, errors and the application's own events; `docker compose logs` still shows everything. In Grafana's Explore, a Caddy line's `X-Correlation-Id` links to the API events of that request. Prometheus names the hosts `job` `Usta.Api` and `Usta.Admin.Api`; traces that the hosts send are dropped. The Docker socket also lets Alloy control every container on this host, so run the monitoring services only on a server you control.
+
+«Коды подтверждения» shows the API's `Usta.PhoneCodes` meter: codes by channel, the share that went through WhatsApp and Telegram, fallbacks to SMS and refusals by reason, the statuses of WhatsApp's webhook, the Telegram Gateway balance, and the cost and the savings against SMS at the prices in the variables at the top, in som with a decimal point (SMS 1.77, WhatsApp 0.67, Telegram 0.88 by default). A price typed there stays in the page's address until the dashboard is opened anew; to change a default, edit `phone-codes.json` as described below. The savings are an upper bound: a messenger code after which the user still asked for an SMS counts as saved.
 
 Set these variables in the Windows environment of the server, like the SMS settings and never in `.env.stage`, then open a new PowerShell window and restart:
 
@@ -125,6 +127,9 @@ Grafana evaluates the rules of `monitoring/grafana/provisioning/alerting/rules.y
 | Доля 5xx выше 5 % | more than 5 % of at least 20 visitor requests in 5 minutes got 5xx |
 | Всплеск запросов | for 2 minutes visitors send more than 5 requests a second and five times as many as in the previous hour |
 | Журнал Caddy молчит | Loki has no Caddy line for 10 minutes or does not answer: Caddy, Alloy or Loki is down |
+| Заканчивается баланс Telegram Gateway | the balance Telegram reported with the last paid code is below 10 |
+| Коды мессенджера уходят по SMS | in an hour more than half of at least 5 WhatsApp or Telegram codes went by SMS instead; a sign-in code to an account that has not confirmed the messenger does not count |
+| Провайдер кодов отказывает из-за настроек или оплаты | in 10 minutes Nikita, Telegram or WhatsApp refused a code for its token, number, template or payment, a failed status of WhatsApp's webhook included; the API's error log names the error |
 
 To set up Telegram, create a bot with @BotFather, add it to the team's group and send a message there. `https://api.telegram.org/bot<token>/getUpdates` then shows the group as `chat.id`. After the restart, Alerting → Contact points → Telegram → Test in Grafana sends a test message. Rules, the contact point and the notification policy are provisioned from files like the dashboards: change the YAML, then restart Grafana.
 
@@ -180,3 +185,44 @@ The API uses the SMS emulator unless the host sets `SMS_MODE`. To send real SMS 
 Open a new PowerShell window so it sees the variables, then run `.\restart.ps1`; Compose prefers them to `.env.stage`. Set the first four together: `live` with the emulator's placeholder login still starts, and the first SMS fails with Nikita status 2 in the API log. Nikita must also allow the server's public IP (status 3 otherwise) and have a positive balance (status 4). Without the variables the staff route `/api/v1/test/sms/messages` shows emulated messages; in `live` it returns 404.
 
 The main and optional admin compose files each declare the shared API environment because YAML anchors do not span files. Keep their database, storage, phone-code and data-protection settings in sync. Application credentials remain in `.env.stage`.
+
+### Codes in WhatsApp and Telegram
+
+Without the variables below, WhatsApp is off and Telegram runs on the emulator. A messenger that is on gets its button on the site, and a user who presses it gets the code in WhatsApp or Telegram. A messenger that is off, out of its daily budget or refusing a code sends the same code by SMS, so turning one on never stops codes. Turn them on one at a time with a small daily budget, for example 30, check each on real phones as the acceptance on real numbers describes (`usta/backend/docs/api/sms-auth-acceptance.md` in the kyzmet_mvp repository), watch «Коды подтверждения» for a few days, then raise the budget.
+
+WhatsApp needs a business portfolio verified by Meta and an approved authentication template. Until both are ready, leave the `WHATSAPP_*` variables unset: the API keeps WhatsApp off, and the site shows no WhatsApp button.
+
+Set these variables in the Windows environment of the server, like the SMS settings, never in `.env.stage`:
+
+| Variable | Value |
+| --- | --- |
+| `TELEGRAM_MODE` | `live` |
+| `TELEGRAM_GATEWAY_TOKEN` | API token of the Telegram Gateway account |
+| `TELEGRAM_DAILY_LIMIT` | Codes a day through Telegram, then SMS; 250 when unset |
+| `WHATSAPP_MODE` | `live` |
+| `WHATSAPP_PHONE_NUMBER_ID` | Phone number ID of the WhatsApp Business number |
+| `WHATSAPP_ACCESS_TOKEN` | Permanent token of the Meta system user |
+| `WHATSAPP_TEMPLATE_NAME` | Name of the approved authentication template in Russian (`ru`) |
+| `WHATSAPP_APP_SECRET` | App Secret of the Meta app: the API checks the webhook's signature with it |
+| `WHATSAPP_VERIFY_TOKEN` | A long random string, also typed as Verify token in the webhook settings of the Meta app |
+| `WHATSAPP_DAILY_LIMIT` | Codes a day through WhatsApp, then SMS; 250 when unset, never above Meta's daily recipient limit |
+
+Open a new PowerShell window, then run `.\restart.ps1`. Set a messenger's variables together. WhatsApp in `live` with a missing or malformed setting stops the API at startup, and Caddy waits for its healthcheck. Telegram in `live` without `TELEGRAM_GATEWAY_TOKEN` still starts with the emulator's placeholder token: Gateway refuses every code, the code goes by SMS, and «Провайдер кодов отказывает из-за настроек или оплаты» fires. Without `TELEGRAM_MODE` the stack, which runs in Development, keeps the Telegram emulator: codes asked for in Telegram reach no phone, and the staff route `/api/v1/test/telegram/messages` shows them; in `live` it returns 404. So set `live` before the site shows the Telegram button to real users, or `disabled` to keep every code on SMS. `https://topoz.kg/api/v1/auth/phone-codes/channels` lists the messengers that are on.
+
+Telegram takes its balance from Fragment; codes to the number of the Gateway account's owner are free, which suits the first check. The «Заканчивается баланс Telegram Gateway» alert fires below 10.
+
+WhatsApp reports delivery to `https://topoz.kg/api/v1/webhooks/whatsapp`, which Caddy forwards with the rest of `/api`. Set `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` and restart before saving the callback URL in the Meta app: the route answers Meta's verification request while both are set, whatever `WHATSAPP_MODE` is, and 404 without them. Then subscribe the webhook to the `messages` field. A code Meta could not deliver comes again by SMS, for the same code screen.
+
+On this host all visitors share one address for the API's limits, so the limit of 5 code requests a minute per address holds for the whole site (see Visitor addresses).
+
+Two to four weeks after a messenger goes on, compare the dashboard's share of messenger codes and its cost with the bills of Meta, Fragment and Nikita, and correct the price variables of the dashboard if they differ.
+
+### Visitor addresses
+
+The API limits requests per visitor's address: 5 code requests a minute (`RateLimiting__PhoneCodes__PermitLimit`), 12 sign-in attempts a minute (`RateLimiting__Auth__PermitLimit`) and the requests of guests in general. It takes the address from the `X-Forwarded-For` header Caddy sets, since it trusts proxies in `TRUSTED_PROXY_NETWORK`: Docker's networks, `172.16.0.0/12`, unless the variable is set. Caddy writes the address it sees into that header and ignores one a visitor sends, so a visitor cannot claim another address to dodge a limit. The API also takes the scheme from Caddy, sees HTTPS and marks its cookies Secure.
+
+Docker Desktop has no setting that keeps visitors' addresses: Caddy sees Docker's gateway (see Request log), so on this Windows host all visitors share one address, and each per-address limit holds for the whole site: a sixth code request in a minute gets 429, whoever sends it. On a Linux host Docker keeps the addresses, and every visitor gets limits of their own without further changes. Check there that the Compose network lies inside `TRUSTED_PROXY_NETWORK`, or set the variable to its subnet:
+
+```powershell
+docker network inspect usta-stage_topoz-proxy --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+```
