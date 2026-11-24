@@ -48,10 +48,10 @@ Browsers load photos straight from MinIO, not through the API. The API builds ph
 
 DNS for `topoz.kg` and ports 80/443 must reach this host for public HTTPS. Host diagnostic ports can be changed in `.env.stage`. `FRONTEND_ORIGIN` is set to `https://topoz.kg`.
 
-Caddy reads the Caddyfile when it starts, and a Caddyfile it rejects stops every site, `topoz.kg` included. After changing it, validate the file, then recreate the Caddy container:
+Caddy reads the Caddyfile when it starts, and a Caddyfile it rejects stops every site, `topoz.kg` included. After changing it, validate the file in a one-off Caddy container with the service's settings, then recreate the Caddy container:
 
 ```powershell
-docker run --rm -v "$(Join-Path $PWD 'Caddyfile'):/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file .env.stage -f docker-compose-stage.yml run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile
 docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-admin.yml up -d --force-recreate --no-deps caddy
 ```
 
@@ -74,7 +74,7 @@ Docker Desktop forwards published ports from its own gateway, so `remote_ip` and
 - Grafana Alloy follows `topoz.log` and `admin.log` through a read-only mount of `caddy_logs` and sends new lines to Loki. Its position in each file is kept in the `alloy_data` volume. It also reads the output of the `api` and `admin-api` containers of this Compose project through the Docker socket and receives their OpenTelemetry metrics on port 4317 inside the Compose network.
 - Loki stores the log lines for 30 days in the `loki_data` volume and parses their fields when queried.
 - Prometheus stores the API metrics for 90 days in the `prometheus_data` volume.
-- Grafana shows them at https://192.168.1.183:5084: the «Трафик», «API» and «Коды подтверждения» dashboards and Drilldown → Logs.
+- Grafana shows them at `https://<SERVER_LAN_ADDRESS>:5084` (see Server address): the «Трафик», «API» and «Коды подтверждения» dashboards and Drilldown → Logs.
 
 Configuration lives in `monitoring/`: `alloy/config.alloy`, `loki/config.yaml`, Grafana's data source and dashboard provisioning, and the dashboards as JSON in `grafana/dashboards/`. Alloy labels every Caddy line with `kind` and `status_class` (`2xx`…`5xx`) and attaches `route` (the path without its query, every GUID replaced by `{id}`) and `agent` (`loadtest` for k6, `bot` for bots, tools and an empty User-Agent, `browser` otherwise). At rest the four services take about 0.5 GB of memory.
 
@@ -103,7 +103,8 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compo
 Caddy serves Grafana like the admin panel, with the same internal certificate, so clients that trust the admin panel trust Grafana too. Sign-up and anonymous access are off. Allow the port on the LAN once, in an elevated PowerShell window:
 
 ```powershell
-New-NetFirewallRule -DisplayName 'TOPOZ Grafana HTTPS LAN 5084' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 192.168.1.183 -LocalPort 5084 -RemoteAddress LocalSubnet -Profile Any
+$lan = ((Get-Content .env.stage) -match '^SERVER_LAN_ADDRESS=')[0].Split('=')[1]
+New-NetFirewallRule -DisplayName 'TOPOZ Grafana HTTPS LAN 5084' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress $lan -LocalPort 5084 -RemoteAddress LocalSubnet -Profile Any
 ```
 
 Grafana loads dashboards from the JSON files when it starts and does not let the UI save over them. To change one, edit it in Grafana, copy its JSON from Export into the file under `monitoring/grafana/dashboards/`, then restart Grafana:
@@ -134,7 +135,7 @@ Grafana evaluates the rules of `monitoring/grafana/provisioning/alerting/rules.y
 To set up Telegram, create a bot with @BotFather, add it to the team's group and send a message there. `https://api.telegram.org/bot<token>/getUpdates` then shows the group as `chat.id`. After the restart, Alerting → Contact points → Telegram → Test in Grafana sends a test message. Rules, the contact point and the notification policy are provisioned from files like the dashboards: change the YAML, then restart Grafana.
 
 ## Admin panel
-Start with `-WithAdmin`, then open https://192.168.1.183:5083.
+Start with `-WithAdmin`, then open `https://<SERVER_LAN_ADDRESS>:5083`, where `SERVER_LAN_ADDRESS` in `.env.stage` is the server's IP in the LAN (see Server address).
 
 Sign in with the email and password of an administrator from the stage database. Development seeds `admin@demo.kg` only into an empty database. To make an existing active customer an administrator:
 
@@ -144,9 +145,9 @@ docker compose --env-file .env.stage -f docker-compose-stage.yml exec api dotnet
 
 Admin API: http://localhost:5082/swagger/index.html
 
-Only Caddy publishes the admin UI port, bound to `192.168.1.183:5083`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Keep the server IP fixed; if it changes, update the Caddyfile, the Caddy port bindings in docker-compose-stage.yml and `GF_SERVER_ROOT_URL` in docker-compose-stage-monitoring.yml. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
+Only Caddy publishes the admin UI port, bound to port 5083 of `SERVER_LAN_ADDRESS`. The browser reaches admin-api through admin-web; port 5082 is bound to localhost. Without `-WithAdmin`, the admin URL returns a proxy error until the admin services are started. Restrict inbound TCP 5083 to the intended LAN in Windows Firewall and do not forward it from the Internet.
 
-The panel shows photos from `https://topoz.kg`, so that name must reach this host from the LAN too: through NAT loopback on the router, or a hosts entry `192.168.1.183 topoz.kg` on the client.
+The panel shows photos from `https://topoz.kg`, so that name must reach this host from the LAN too: through NAT loopback on the router, or a hosts entry `<SERVER_LAN_ADDRESS> topoz.kg` on the client.
 
 Caddy uses its internal certificate authority for this private IP. Export its public root certificate after startup (never distribute private keys):
 
@@ -161,10 +162,33 @@ Copy `certificates/topoz-stage-root.crt` to each client device through a trusted
 On the server, run this once in an elevated PowerShell window to allow LAN access:
 
 ```powershell
-New-NetFirewallRule -DisplayName 'TOPOZ Admin HTTPS LAN 5083' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress 192.168.1.183 -LocalPort 5083 -RemoteAddress LocalSubnet -Profile Any
+$lan = ((Get-Content .env.stage) -match '^SERVER_LAN_ADDRESS=')[0].Split('=')[1]
+New-NetFirewallRule -DisplayName 'TOPOZ Admin HTTPS LAN 5083' -Direction Inbound -Action Allow -Protocol TCP -LocalAddress $lan -LocalPort 5083 -RemoteAddress LocalSubnet -Profile Any
 ```
 
 Open the HTTPS URL without a certificate warning and check `window.isSecureContext` in the browser console; it should be `true`. Specific browser features may still require user permissions. Trust is needed on clients, not just inside the Docker container. The `caddy_data` volume preserves the CA across normal restarts; if that volume is deleted, export and trust the new root again.
+
+### Server address
+
+`SERVER_LAN_ADDRESS` in `.env.stage` is the only place that names the server's IP in the LAN. Compose binds Caddy's ports 5083 and 5084 to it, Caddy serves the admin panel and Grafana at it and issues their certificate for it, and Grafana builds its links on it. On those ports Caddy answers a request to any other address with an empty page, so reserve the IP for the server on the router. When it changes anyway:
+
+1. Set `SERVER_LAN_ADDRESS` in `.env.stage` to the new IP.
+2. Recreate Caddy and Grafana. Caddy restarts, so `topoz.kg` is down for a few seconds; without the monitoring stack, leave out its file and `grafana`:
+
+   ```powershell
+   docker compose --env-file .env.stage -f docker-compose-stage.yml -f docker-compose-stage-admin.yml -f docker-compose-stage-monitoring.yml up -d --no-deps caddy grafana
+   ```
+
+3. Move the firewall rules to the new IP, in an elevated PowerShell window:
+
+   ```powershell
+   $lan = ((Get-Content .env.stage) -match '^SERVER_LAN_ADDRESS=')[0].Split('=')[1]
+   Get-NetFirewallRule -DisplayName 'TOPOZ * HTTPS LAN *' | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -LocalAddress $lan
+   ```
+
+4. Point the router's forwarding of ports 80 and 443 and the clients' `topoz.kg` hosts entries to the new IP.
+
+Clients keep trusting the panel and Grafana: Caddy issues the certificate for the new IP from the same root in `caddy_data`.
 
 ## Environment
 

@@ -132,11 +132,13 @@ services:
     image: caddy:2
     container_name: topoz-caddy-stage
     restart: unless-stopped
+    environment:
+      SERVER_LAN_ADDRESS: ${SERVER_LAN_ADDRESS:?Set SERVER_LAN_ADDRESS}
     ports:
       - "80:80"
       - "443:443"
-      - "192.168.1.183:5083:5083"
-      - "192.168.1.183:5084:5084"
+      - "${SERVER_LAN_ADDRESS:?Set SERVER_LAN_ADDRESS}:5083:5083"
+      - "${SERVER_LAN_ADDRESS:?Set SERVER_LAN_ADDRESS}:5084:5084"
     depends_on:
       api:
         condition: service_healthy
