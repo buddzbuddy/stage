@@ -10,6 +10,8 @@
 
 The default stack contains PostgreSQL, MinIO, API, frontend and Caddy. The optional `docker-compose-stage-admin.yml` adds the admin services, `docker-compose-stage-monitoring.yml` the request monitoring. Scripts resolve paths relative to their own directory.
 
+Before the first start, copy `.env.stage.example` to `.env.stage` and fill in the empty values. Git ignores `.env.stage`, so each host keeps its own and a pull never changes it; add a new variable of the example to it by hand.
+
 The backup is restored only when the database has no user relations (tables, views, or sequences). Subsequent runs preserve the existing database and skip restoration. Restores run in a single transaction so a failed restore does not leave partially restored data. An existing database, including one partially restored by an older script, is preserved; this check does not validate its completeness.
 
 Every startup pulls all images selected by the compose files and recreates a container when its image has changed. If a pull fails, startup stops. PostgreSQL and MinIO start first; database restoration completes before API migrations run.
@@ -196,7 +198,7 @@ Development, test subscriptions/payments and registration without phone confirma
 
 ### SMS
 
-The API uses the SMS emulator unless the host sets `SMS_MODE`. To send real SMS through Nikita, set these variables in the Windows environment of the server only (System Properties → Environment Variables → User variables), never in `.env.stage`: it is committed and shared with local copies of this stack.
+The API uses the SMS emulator unless the host sets `SMS_MODE`. To send real SMS through Nikita, set these variables in the Windows environment of the server only (System Properties → Environment Variables → User variables), never in `.env.stage`: local copies of this stack reuse it.
 
 | Variable | Value |
 | --- | --- |
