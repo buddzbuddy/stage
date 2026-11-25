@@ -1,7 +1,7 @@
 {
   "uid": "phone-codes",
   "title": "Коды подтверждения",
-  "description": "Коды по каналам и исходам, откаты на SMS, статусы WhatsApp, баланс Telegram и оценка расходов по ценам из переменных.",
+  "description": "Коды по каналам и исходам, отказы каналов по причинам, статусы WhatsApp, баланс Telegram и оценка расходов по ценам из переменных.",
   "tags": [
     "api",
     "phone-codes"
@@ -200,8 +200,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Откаты на SMS",
-      "description": "Коды, которые мессенджер не взял или не доставил и которые пошли по SMS. Причины — на панели откатов.",
+      "title": "Отказы мессенджеров",
+      "description": "Коды WhatsApp и Telegram, которые мессенджер не принял или не доставил: API ответил ошибкой канала, SMS сам не отправлял. Причины — на панели отказов.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -219,7 +219,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(phone_codes_outcomes_total{outcome=\"fallback\"}[$__range]))",
+          "expr": "sum(increase(phone_codes_outcomes_total{channel=~\"whatsapp|telegram\", outcome=\"refused\"}[$__range]))",
           "range": false,
           "instant": true,
           "format": "time_series",
@@ -256,8 +256,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Отказы",
-      "description": "Коды, которые не ушли ни одним каналом: исчерпан бюджет SMS, провайдер отказал или SMS не подтвердило бы номер в профиле.",
+      "title": "Отказы SMS",
+      "description": "Коды по SMS, которые не ушли: исчерпан бюджет SMS, Nikita отказала или не приняла номер.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -275,7 +275,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(phone_codes_outcomes_total{outcome=\"refused\"}[$__range]))",
+          "expr": "sum(increase(phone_codes_outcomes_total{channel=\"sms\", outcome=\"refused\"}[$__range]))",
           "range": false,
           "instant": true,
           "format": "time_series",
@@ -578,8 +578,8 @@
     {
       "id": 9,
       "type": "bargauge",
-      "title": "Откаты за период по причинам",
-      "description": "disabled — мессенджер выключен, unconfirmed — у аккаунта нет отметки мессенджера для входа, budget — исчерпан дневной бюджет мессенджера, undelivered — Meta сообщила о недоставке, остальное — отказ провайдера.",
+      "title": "Отказы за период по причинам",
+      "description": "disabled — канал выключен, unconfirmed — у аккаунта нет отметки мессенджера для входа, budget — исчерпан дневной бюджет канала, unreachable_recipient — у номера нет мессенджера, invalid_phone — Nikita не приняла номер, undelivered — Meta сообщила о недоставке, остальное — отказ провайдера.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -597,7 +597,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (channel, reason) (increase(phone_codes_outcomes_total{outcome=\"fallback\"}[$__range]))",
+          "expr": "sum by (channel, reason) (increase(phone_codes_outcomes_total{outcome=\"refused\"}[$__range]))",
           "range": false,
           "instant": true,
           "format": "time_series",
@@ -705,8 +705,8 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Откаты и отказы",
-      "description": "fallback — код пошёл по SMS, refused — код не ушёл. Канал — тот, что не доставил код.",
+      "title": "Отказы по каналам и причинам",
+      "description": "Коды, которые канал не принял или не доставил. SMS вместо них API не отправляет: другой способ предлагает сайт.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -726,8 +726,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (channel, outcome, reason) (increase(phone_codes_outcomes_total{outcome=~\"fallback|refused\"}[$__interval]))",
-          "legendFormat": "{{channel}} · {{outcome}} · {{reason}}",
+          "expr": "sum by (channel, reason) (increase(phone_codes_outcomes_total{outcome=\"refused\"}[$__interval]))",
+          "legendFormat": "{{channel}} · {{reason}}",
           "range": true,
           "instant": false,
           "editorMode": "code"

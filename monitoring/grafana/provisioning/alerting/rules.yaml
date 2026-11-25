@@ -210,13 +210,13 @@ groups:
         annotations:
           summary: >-
             На балансе Telegram Gateway осталось {{ printf "%.2f" $values.A.Value }} при пороге 10: пополните его
-            через Fragment, иначе коды Telegram пойдут по SMS.
+            через Fragment, иначе коды Telegram получат ошибку канала.
 
       - uid: phone-code-fallbacks
-        title: Коды мессенджера уходят по SMS
+        title: Мессенджер отказывает в кодах
         condition: C
         data:
-          # A sign-in code to an account without the messenger's mark goes by SMS by design.
+          # Refusals by design: a sign-in without the mark, a number without the messenger, a channel turned off.
           - refId: A
             relativeTimeRange:
               from: 3600
@@ -226,7 +226,7 @@ groups:
               refId: A
               expr: >-
                 sum by (channel) (increase(phone_codes_outcomes_total{channel=~"whatsapp|telegram",
-                outcome="fallback", reason!="unconfirmed"}[1h]))
+                outcome="refused", reason!~"unconfirmed|unreachable_recipient|disabled|undelivered"}[1h]))
               instant: true
           # A WhatsApp code that Meta failed to deliver was counted as sent first.
           - refId: B
@@ -238,7 +238,7 @@ groups:
               refId: B
               expr: >-
                 sum by (channel) (increase(phone_codes_outcomes_total{channel=~"whatsapp|telegram",
-                reason!~"unconfirmed|undelivered"}[1h]))
+                reason!~"unconfirmed|disabled|undelivered"}[1h]))
               instant: true
           - refId: D
             datasourceUid: __expr__
@@ -246,7 +246,7 @@ groups:
               refId: D
               type: math
               expression: $A / $B
-          # Five codes at least: one fallback of two is not a broken provider.
+          # Five codes at least: one refusal of two is not a broken provider.
           - refId: C
             datasourceUid: __expr__
             model:
@@ -258,8 +258,8 @@ groups:
         for: 0s
         annotations:
           summary: >-
-            Кодов {{ $labels.channel }} за час: {{ printf "%.0f" $values.B.Value }}, по SMS из них ушли
-            {{ humanizePercentage $values.D.Value }}. Причины — на панели «Коды подтверждения».
+            Кодов {{ $labels.channel }} за час: {{ printf "%.0f" $values.B.Value }}, провайдер или бюджет
+            отказали в {{ humanizePercentage $values.D.Value }} из них. Причины — на панели «Коды подтверждения».
 
       - uid: phone-code-provider-errors
         title: Провайдер кодов отказывает из-за настроек или оплаты
