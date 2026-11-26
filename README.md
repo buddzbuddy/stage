@@ -194,7 +194,7 @@ Clients keep trusting the panel and Grafana: Caddy issues the certificate for th
 
 ## Environment
 
-Development, test subscriptions/payments and registration without phone confirmation remain enabled; SMS mode is described below. Embedding settings are unchanged; no embedding service is started here.
+Development, the test subscription offer and registration without phone confirmation remain enabled; SMS mode and payments through Finik Beta are described below. Embedding settings are unchanged; no embedding service is started here.
 
 ### SMS
 
@@ -252,3 +252,47 @@ Docker Desktop has no setting that keeps visitors' addresses: Caddy sees Docker'
 ```powershell
 docker network inspect usta-stage_topoz-proxy --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
 ```
+
+### Payments through Finik Beta
+
+Without the variables below, subscription invoices stay on the mock provider `local-test`: a dispatcher simulates their payment. With them, the invoice the API issues on approval gets a payment page of Finik Beta, Finik's webhook confirms the payment, and the subscription becomes active without a dispatcher. Finik Beta takes no money, so its invoices and subscriptions keep the mode `test`; the address of the beta and Finik's public key come with the API image.
+
+Set these variables in the Windows environment of the server, like the SMS settings, never in `.env.stage`:
+
+| Variable | Value |
+| --- | --- |
+| `SUBSCRIPTION_PAYMENT_MODE` | `finik`; `test` or unset keeps the mock |
+| `FINIK_API_KEY` | API key of the type WEB that Finik issued |
+| `FINIK_ACCOUNT_ID` | ID of the Finik account that receives the payments |
+| `FINIK_PRIVATE_KEY_FILE` | Path to the unencrypted private RSA key in PEM whose public half Finik holds, outside both repositories, for example `C:\topoz\secrets\finik_private.pem` |
+
+Compose mounts the key file read-only into the API at `/run/secrets/finik_private.pem`; without `FINIK_PRIVATE_KEY_FILE` the API gets an empty file there, which only the `finik` mode reads. Docker Desktop creates a mistyped path as an empty folder; delete it after correcting the variable. With `finik`, a missing setting or a key the API cannot read, that folder included, stops the API at startup with a message naming the setting, and the API container restarts until it is fixed; Caddy waits for its healthcheck, so the site is down meanwhile. Read the message, then fix the variable or go back to `test`:
+
+```powershell
+docker compose --env-file .env.stage -f docker-compose-stage.yml logs --tail 20 api
+```
+
+The API builds both of Finik's addresses on `FRONTEND_ORIGIN`:
+
+- The webhook `https://topoz.kg/api/v1/subscriptions/payments/webhook/finik`, which Caddy forwards with the rest of `/api`, body and headers unchanged. The API checks Finik's signature against this configured address, not against the address a request arrives at, so `FRONTEND_ORIGIN` must be the site's public HTTPS origin.
+- The return to the site after paying, `https://topoz.kg/subscription/subscriptions/<subscription>?view=payment&invoice=<invoice>&from=finik`. The site team confirms the route; a new one goes into `Finik__ReturnUrl` in `docker-compose-stage.yml`.
+
+Finik reports only successful payments and repeats a webhook until the API answers 200: five times 30 seconds apart, then twice as rarely each time, up to once a day. A payment made while the API was down is credited when Finik repeats it. While the mode is not `finik`, the webhook route answers 503, and Finik repeats too.
+
+To turn Finik on:
+
+1. Back up the database to a folder outside the repository, and keep the copy on the server: it holds the users' data.
+
+   ```powershell
+   docker compose --env-file .env.stage -f docker-compose-stage.yml exec -T db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /tmp/before-finik.dump'
+   New-Item -ItemType Directory -Force $HOME\topoz-backups
+   docker compose --env-file .env.stage -f docker-compose-stage.yml cp db:/tmp/before-finik.dump $HOME\topoz-backups\before-finik.dump
+   ```
+
+2. Set `USTA_API_IMAGE` and `USTA_ADMIN_API_IMAGE` in `.env.stage` to the tag of images with Finik payments, then run `.\restart.ps1` with the flags you use. The API migrates the database and keeps the mock: check that a dispatcher still approves an application and simulates its payment.
+3. Put the key file on the server, set the four variables, open a new PowerShell window and run `.\restart.ps1` again.
+4. A dispatcher approves an application. `GET https://topoz.kg/api/v1/subscriptions/invoices/<invoice>` shows `"provider": "finik"`, `"mode": "test"` and `paymentUrl`. Open [Finik Playground](https://www.finik.kg/documentation/web-sdk/playground/), paste `paymentUrl` into «Провести тестовый платёж» and press «Оплатить»: within seconds the invoice is `paid` and the subscription `active`. The full acceptance is the table «Проверка» in `docs/finik-payments-plan.md` of the kyzmet_mvp repository.
+
+Invoices issued before the switch keep the mock: a dispatcher still simulates their payment, while simulating a Finik invoice answers 409 `provider_mismatch`. The site `topoz-web:0.1.1` knows neither `provider` nor `paymentUrl`: it can show a Finik invoice's QR, which encodes the payment page, and shows its payment code as «Не предоставлен». The «Оплатить в Finik» button and the screen after the return come with the site version the site team builds from the page «Оплата через Finik для сайта TOPOZ».
+
+To roll back, set `SUBSCRIPTION_PAYMENT_MODE` to `test` or delete it, open a new PowerShell window and run `.\restart.ps1`; if the new image itself fails, also set the image tags in `.env.stage` back to the previous ones. The previous image works with the migrated database. New invoices then go to the mock, and Finik's invoices wait: their webhooks get 503 and come again once the mode is `finik`.
