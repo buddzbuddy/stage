@@ -265,8 +265,9 @@ Set these variables in the Windows environment of the server, like the SMS setti
 | `FINIK_API_KEY` | API key of the type WEB that Finik issued |
 | `FINIK_ACCOUNT_ID` | ID of the Finik account that receives the payments |
 | `FINIK_PRIVATE_KEY_FILE` | Path to the unencrypted private RSA key in PEM whose public half Finik holds, outside both repositories, for example `C:\topoz\secrets\finik_private.pem` |
+| `FINIK_KEEP_OPEN` | `true` keeps Finik open to its own invoices — their webhooks and checks — while `SUBSCRIPTION_PAYMENT_MODE` is not `finik`, for a rollback or a move to another provider; it needs the Finik variables above. Unset or `false` closes Finik outside the `finik` mode |
 
-Compose mounts the key file read-only into the API at `/run/secrets/finik_private.pem`; without `FINIK_PRIVATE_KEY_FILE` the API gets an empty file there, which only the `finik` mode reads. Docker Desktop creates a mistyped path as an empty folder; delete it after correcting the variable. With `finik`, a missing setting or a key the API cannot read, that folder included, stops the API at startup with a message naming the setting, and the API container restarts until it is fixed; Caddy waits for its healthcheck, so the site is down meanwhile. Read the message, then fix the variable or go back to `test`:
+Compose mounts the key file read-only into the API at `/run/secrets/finik_private.pem`; without `FINIK_PRIVATE_KEY_FILE` the API gets an empty file there, which only an open Finik reads: the `finik` mode or `FINIK_KEEP_OPEN=true`. Docker Desktop creates a mistyped path as an empty folder; delete it after correcting the variable. While Finik is open, a missing setting or a key the API cannot read, that folder included, stops the API at startup with a message naming the setting, and the API container restarts until it is fixed; Caddy waits for its healthcheck, so the site is down meanwhile. Read the message, then fix the variable or go back to `test`:
 
 ```powershell
 docker compose --env-file .env.stage -f docker-compose-stage.yml logs --tail 20 api
@@ -277,7 +278,7 @@ The API builds both of Finik's addresses on `FRONTEND_ORIGIN`:
 - The webhook `https://topoz.kg/api/v1/subscriptions/payments/webhook/finik`, which Caddy forwards with the rest of `/api`, body and headers unchanged. The API checks Finik's signature against this configured address, not against the address a request arrives at, so `FRONTEND_ORIGIN` must be the site's public HTTPS origin.
 - The return to the site after paying, `https://topoz.kg/subscription/subscriptions/<subscription>?view=payment&invoice=<invoice>&from=finik`. The site team confirms the route; a new one goes into `Finik__ReturnUrl` in `docker-compose-stage.yml`.
 
-Finik reports only successful payments and repeats a webhook until the API answers 200: five times 30 seconds apart, then twice as rarely each time, up to once a day. A payment made while the API was down is credited when Finik repeats it. While the mode is not `finik`, the webhook route answers 503, and Finik repeats too.
+Finik reports only successful payments and repeats a webhook until the API answers 200: five times 30 seconds apart, then twice as rarely each time, up to once a day. A payment made while the API was down is credited when Finik repeats it. While Finik is closed — the mode is not `finik` and `FINIK_KEEP_OPEN` is not `true` — its webhook route answers 503, and Finik repeats too.
 
 To turn Finik on:
 
@@ -295,4 +296,4 @@ To turn Finik on:
 
 Invoices issued before the switch keep the mock: a dispatcher still simulates their payment, while simulating a Finik invoice answers 409 `provider_mismatch`. The site `topoz-web:0.1.1` knows neither `provider` nor `paymentUrl`: it can show a Finik invoice's QR, which encodes the payment page, and shows its payment code as «Не предоставлен». The «Оплатить в Finik» button and the screen after the return come with the site version the site team builds from the page «Оплата через Finik для сайта TOPOZ».
 
-To roll back, set `SUBSCRIPTION_PAYMENT_MODE` to `test` or delete it, open a new PowerShell window and run `.\restart.ps1`; if the new image itself fails, also set the image tags in `.env.stage` back to the previous ones. The previous image works with the migrated database. New invoices then go to the mock, and Finik's invoices wait: their webhooks get 503 and come again once the mode is `finik`.
+To roll back, set `SUBSCRIPTION_PAYMENT_MODE` to `test` or delete it, open a new PowerShell window and run `.\restart.ps1`; if the new image itself fails, also set the image tags in `.env.stage` back to the previous ones. The previous image works with the migrated database. New invoices then go to the mock, and Finik's invoices wait: their webhooks get 503 and come again once the mode is `finik`. To keep crediting the Finik invoices already shown, set `FINIK_KEEP_OPEN=true` with the rollback of the mode and keep the Finik variables and the key file: Finik's webhooks are then credited while new invoices go to the mock. The previous image does not know `FINIK_KEEP_OPEN` and closes Finik outside the `finik` mode.

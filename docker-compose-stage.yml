@@ -55,6 +55,7 @@ services:
       # The API checks Finik's signature against this address, not the one a request arrives at.
       Finik__WebhookUrl: ${FRONTEND_ORIGIN:-https://topoz.kg}/api/v1/subscriptions/payments/webhook/finik
       Finik__ReturnUrl: "${FRONTEND_ORIGIN:-https://topoz.kg}/subscription/subscriptions/{subscriptionId}?view=payment&invoice={invoiceId}&from=finik"
+      Finik__KeepOpen: ${FINIK_KEEP_OPEN:-false}
       AI__OpenAI__ApiKey: ${OPENAI_API_KEY:-}
       EmbeddingService__BaseUrl: ${EMBEDDING_SERVICE_URL:-http://host.docker.internal:8092}
       Discovery__Enabled: ${DISCOVERY_ENABLED:-false}
@@ -67,7 +68,7 @@ services:
       - "${STAGE_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8081}:8080"
     volumes:
       - api_dataprotection:/var/usta/dataprotection
-      # Without FINIK_PRIVATE_KEY_FILE the key file is empty; only SUBSCRIPTION_PAYMENT_MODE=finik reads it.
+      # Without FINIK_PRIVATE_KEY_FILE the key file is empty; only an open Finik reads it: mode finik or FINIK_KEEP_OPEN=true.
       - type: bind
         source: ${FINIK_PRIVATE_KEY_FILE:-/dev/null}
         target: /run/secrets/finik_private.pem
