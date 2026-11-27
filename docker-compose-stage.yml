@@ -48,9 +48,11 @@ services:
       SubscriptionPayment__Mode: ${SUBSCRIPTION_PAYMENT_MODE:-test}
       SubscriptionPayment__WebhookSecret: ${SUBSCRIPTION_WEBHOOK_SECRET:?Set SUBSCRIPTION_WEBHOOK_SECRET to at least 32 characters}
       # Finik Beta: the image brings its address and public key, and its payments are marked test.
-      Finik__Mode: test
+      Finik__Mode: ${FINIK_MODE:-test}
+      Finik__BaseUrl: ${FINIK_BASE_URL:-https://beta.api.acquiring.averspay.kg}
       Finik__ApiKey: ${FINIK_API_KEY:-}
       Finik__AccountId: ${FINIK_ACCOUNT_ID:-}
+      Finik__PublicKey: ${FINIK_PUBLIC_KEY:-}
       Finik__PrivateKeyPath: /run/secrets/finik_private.pem
       # The API checks Finik's signature against this address, not the one a request arrives at.
       Finik__WebhookUrl: ${FRONTEND_ORIGIN:-https://topoz.kg}/api/v1/subscriptions/payments/webhook/finik
