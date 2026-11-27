@@ -44,8 +44,18 @@ services:
       Whatsapp__Webhook__VerifyToken: ${WHATSAPP_VERIFY_TOKEN:-}
       PhoneCodes__Channels__Whatsapp__DailyLimit: ${WHATSAPP_DAILY_LIMIT:-250}
       SubscriptionOffer__Mode: test
-      SubscriptionPayment__Mode: test
+      # Unset variables keep the mock payments, so a host without Finik settings never creates a Finik link.
+      SubscriptionPayment__Mode: ${SUBSCRIPTION_PAYMENT_MODE:-test}
       SubscriptionPayment__WebhookSecret: ${SUBSCRIPTION_WEBHOOK_SECRET:?Set SUBSCRIPTION_WEBHOOK_SECRET to at least 32 characters}
+      # Finik Beta: the image brings its address and public key, and its payments are marked test.
+      Finik__Mode: test
+      Finik__ApiKey: ${FINIK_API_KEY:-}
+      Finik__AccountId: ${FINIK_ACCOUNT_ID:-}
+      Finik__PrivateKeyPath: /run/secrets/finik_private.pem
+      # The API checks Finik's signature against this address, not the one a request arrives at.
+      Finik__WebhookUrl: ${FRONTEND_ORIGIN:-https://topoz.kg}/api/v1/subscriptions/payments/webhook/finik
+      Finik__ReturnUrl: "${FRONTEND_ORIGIN:-https://topoz.kg}/subscription/subscriptions/{subscriptionId}?view=payment&invoice={invoiceId}&from=finik"
+      Finik__KeepOpen: ${FINIK_KEEP_OPEN:-false}
       AI__OpenAI__ApiKey: ${OPENAI_API_KEY:-}
       EmbeddingService__BaseUrl: ${EMBEDDING_SERVICE_URL:-http://host.docker.internal:8092}
       Discovery__Enabled: ${DISCOVERY_ENABLED:-false}
@@ -58,6 +68,11 @@ services:
       - "${STAGE_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8081}:8080"
     volumes:
       - api_dataprotection:/var/usta/dataprotection
+      # Without FINIK_PRIVATE_KEY_FILE the key file is empty; only an open Finik reads it: mode finik or FINIK_KEEP_OPEN=true.
+      - type: bind
+        source: ${FINIK_PRIVATE_KEY_FILE:-/dev/null}
+        target: /run/secrets/finik_private.pem
+        read_only: true
     depends_on:
       db:
         condition: service_healthy
